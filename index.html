@@ -1,109 +1,594 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>This Week sync TEST (dummy data only)</title>
-<style>body{font:16px system-ui;margin:16px;max-width:720px}button{font:inherit;padding:12px 14px;margin:4px 4px 4px 0;border-radius:10px;border:1px solid #888;background:#fff}
-button.p{background:#1a56db;color:#fff;border-color:#1a56db}pre{background:#f4f4f4;padding:10px;border-radius:8px;white-space:pre-wrap;word-break:break-all;font-size:13px}.warn{background:#fff3cd;padding:8px;border-radius:8px}</style></head><body>
-<h1>This Week sync TEST</h1>
-<p class="warn">Isolated test page. Dummy data only. Not the live app. Writes only to a sheet this page creates or you pick. The sign-in token is kept in memory only.</p>
-<div>
-<button class="p" id="b-signin">1. Sign in with Google</button>
-<button id="b-create">2. Create dummy sheet</button>
-<button id="b-pick">2b. Pick an existing sheet</button>
-<button id="b-write">3. Write 3 app events</button>
-<button id="b-read">4. Read back and fold</button>
-<button id="b-conflict">5. Write conflicting edit</button>
-<button id="b-resolve">6. Resolve conflict</button>
-</div>
-<p>Sheet: <span id="sheet">none</span></p>
-<pre id="log"></pre>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="https://apis.google.com/js/api.js" async defer></script>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>This Week - v4 dummy recovery prototype</title>
+<style>
+:root{--ink:#1d1d1f;--mut:#6e6e73;--line:#e3e3e6;--bg:#f5f5f7;--card:#fff;--acc:#0a5cff;--amber:#b86e00;--red:#c1272d;--grn:#1e7d32}
+*{box-sizing:border-box;margin:0}
+body{font:16px/1.45 -apple-system,"Helvetica Neue",Arial,sans-serif;color:var(--ink);background:var(--bg);padding-bottom:76px}
+header{position:sticky;top:0;background:var(--bg);z-index:5;padding:10px 14px 6px;border-bottom:1px solid var(--line)}
+header h1{font-size:19px;display:inline-block}
+.chip{display:inline-block;font-size:12px;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:2px 9px;margin-left:8px;vertical-align:middle;background:#fff}
+.view{padding:12px 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px}
+.card h3{font-size:15px;margin-bottom:2px}
+.tsk{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:0 0 8px;display:block;width:100%;text-align:left;cursor:pointer}
+.tsk .t{font-size:15px}
+.tsk .meta{font-size:12.5px;color:var(--mut);margin-top:3px;display:flex;flex-wrap:wrap;gap:5px}
+.pill{font-size:11.5px;border-radius:999px;padding:1px 8px;border:1px solid var(--line);background:#fafafa}
+.pill.due-soon{color:var(--amber);border-color:#ecc98a;background:#fdf6e9}
+.pill.due-pass{color:var(--red);border-color:#e6a3a6;background:#fdeeee}
+.pill.must{color:#fff;background:var(--ink);border-color:var(--ink)}
+.pill.stop{color:var(--acc);border-color:#b9d0fb;background:#eef4ff}
+.pill.conflict{color:var(--red);border-color:#e6a3a6;background:#fdeeee}
+h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);margin:16px 0 7px}
+.notice{border-radius:12px;padding:10px 12px;margin:0 0 10px;font-size:14px}
+.notice.warn{background:#fdf6e9;border:1px solid #ecc98a}
+.notice.bad{background:#fdeeee;border:1px solid #e6a3a6}
+.notice.ok{background:#eef7ef;border:1px solid #b7dcc0}
+.btn{display:inline-block;border:1px solid var(--ink);background:var(--ink);color:#fff;border-radius:10px;padding:9px 14px;font-size:14.5px;cursor:pointer;margin:4px 6px 4px 0}
+.btn.soft{background:#fff;color:var(--ink);border-color:#cfd0d4}
+.btn.danger{background:#fff;color:var(--red);border-color:#e6a3a6}
+.btn.small{padding:5px 10px;font-size:13px}
+textarea,input[type=text],input[type=date],input[type=number],select{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;background:#fff}
+textarea{min-height:84px;resize:vertical}
+label.f{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row>*{flex:1}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;z-index:6}
+nav button{flex:1;border:0;background:none;padding:9px 0 11px;font-size:12.5px;color:var(--mut);cursor:pointer}
+nav button.on{color:var(--acc);font-weight:600}
+nav .badge{display:inline-block;background:var(--red);color:#fff;border-radius:999px;font-size:10px;padding:0 5px;margin-left:2px}
+#sheet{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10;display:none}
+#sheet .in{position:absolute;left:0;right:0;bottom:0;max-height:88%;overflow:auto;background:var(--bg);border-radius:16px 16px 0 0;padding:16px 14px 90px}
+#sheet .x{position:absolute;top:10px;right:12px;border:0;background:none;font-size:20px;color:var(--mut)}
+.rev{border-top:1px dashed var(--line);margin-top:8px;padding-top:6px;font-size:12.5px;color:var(--mut)}
+.rev li{margin-left:16px}
+.cap{font-size:13px;color:var(--mut);margin:4px 0 8px}
+.hidden{display:none!important}
+.flash{position:sticky;top:52px;z-index:4;margin:8px 14px 0;background:var(--ink);color:#fff;border-radius:10px;padding:8px 12px;font-size:13.5px}
+.flash:empty{display:none}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.chips button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 11px;font-size:13px;cursor:pointer}
+.chips button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.photo{max-width:100%;border-radius:10px;margin-top:8px;border:1px solid var(--line)}
+.rhythm .dots{letter-spacing:2px;font-size:15px}
+.demo{font-size:12px;color:var(--mut);border:1px dashed var(--line);border-radius:10px;padding:8px 10px;margin-top:14px}
+li.li{margin-left:18px;font-size:14.5px;padding:3px 0}
+</style>
+</head>
+<body>
+<header><h1>This Week</h1><span class="chip" id="storeChip">on this device</span><span class="chip" id="protoChip">v4 recovery - dummy data</span></header>
+<div class="flash" id="flash"></div>
+<main id="main"></main>
+<nav id="tabs"></nav>
+<div id="sheet"><div class="in" id="sheetIn"></div></div>
 <script>
-const CLIENT_ID='701914526594-e1bl0dm3f5drujfjnb5l0hc40m3844a0.apps.googleusercontent.com';
-const API_KEY='AIzaSyAhrv77l1wZR7ZLrKamaDFlB0Ed0nrrESI';
-const APP_ID='701914526594';
-const SCOPE='https://www.googleapis.com/auth/drive.file';
-const HEAD=['id','entity','field','value','actor','base','at'];
-const R={steps:[]};window.__result=R;
-const log=m=>{const s=(typeof m==='string'?m:JSON.stringify(m));document.getElementById('log').textContent+=s+'\n';};
-let token=null,tokenExpiry=0,tc=null,sheetId=null;
-const $=id=>document.getElementById(id);
-// Event-log fold with causal base ancestry. Event: {id,entity,field,value,actor,base:[ids],at}
-// base = ids of the latest events for that entity+field the writer had materialized when writing.
-function fold(rawEvents){
-  const byId=new Map();let dups=0;
-  for(const e of rawEvents){ if(byId.has(e.id)){dups++;continue;} byId.set(e.id,e); }
-  const missing=[];
-  for(const e of byId.values()) for(const b of e.base||[]) if(!byId.has(b)) missing.push({event:e.id,missingBase:b});
-  // an event is superseded if any other event lists it in base (directly) or transitively
-  const supersedes=new Map(); // id -> set of ids it descends from
-  const anc=id=>{ if(supersedes.has(id))return supersedes.get(id); supersedes.set(id,new Set());
-    const s=new Set();for(const b of byId.get(id).base||[]){ if(!byId.has(b))continue; s.add(b); for(const x of anc(b))s.add(x);} supersedes.set(id,s);return s;};
-  for(const id of byId.keys())anc(id);
-  const state={},conflicts=[];
-  const groups={};
-  for(const e of byId.values()){ (groups[e.entity+'\u0000'+e.field]??=[]).push(e); }
-  for(const key in groups){
-    const evs=groups[key];
-    const heads=evs.filter(e=>!evs.some(o=>o.id!==e.id&&anc(o.id).has(e.id)));
-    const [entity,field]=key.split('\u0000');
-    (state[entity]??={})[field]=null;
-    const vals=[...new Set(heads.map(h=>JSON.stringify(h.value)))];
-    if(heads.length===1||vals.length===1){ state[entity][field]=heads[0].value; }
-    else{ // concurrent heads with different values: keep all, flag, never pick a winner
-      state[entity][field]=undefined; conflicts.push({entity,field,candidates:heads.map(h=>({id:h.id,actor:h.actor,value:h.value,at:h.at}))}); }
+/* ==== This Week v3 prototype. Dummy data only. No network, no accounts. ==== */
+/* ---- utils ---- */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const uid=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const todayStr=()=>localISO(new Date());
+function localISO(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function addDays(iso,n){const d=new Date(iso+'T12:00:00');d.setDate(d.getDate()+n);return localISO(d);}
+function weekStart(iso){const d=new Date(iso+'T12:00:00');d.setDate(d.getDate()-d.getDay());return localISO(d);} // Sunday
+function daysBetween(a,b){return Math.round((new Date(b+'T12:00:00')-new Date(a+'T12:00:00'))/864e5);}
+function niceDay(iso){if(!iso)return'';const t=todayStr();if(iso===t)return 'today';if(iso===addDays(t,1))return 'tomorrow';
+  return new Date(iso+'T12:00:00').toLocaleDateString('en-CA',{weekday:'short',month:'short',day:'numeric'});}
+function flash(msg){const f=$('#flash');f.textContent=msg;clearTimeout(flash._t);flash._t=setTimeout(()=>f.textContent='',4000);}
+const nowISO=()=>new Date().toISOString();
+
+/* ---- state & storage (localStorage for the prototype; production stays IndexedDB) ---- */
+const LS_KEY='twV3PrototypeV1';
+let state={tasks:[],photos:{}};
+function persist(){try{localStorage.setItem(LS_KEY,JSON.stringify(state));}catch(e){flash('Could not save: storage full or blocked.');}}
+function load(){try{const raw=localStorage.getItem(LS_KEY);if(raw)state=JSON.parse(raw);}catch(e){}}
+
+/* ---- record model: revision history + per-side change tracking ---- */
+function newTask(fields){
+  const t={id:uid('t'),title:'',notes:'',tags:[],col:'inbox',status:'open',
+    dueDate:null,plannedDay:null,notBefore:null,mustWeekOf:null,
+    sizeMin:null,effort:null,interruptible:null,dependsOn:[],
+    progress:{state:'not-started',stoppingPoint:'',updatedAt:null},
+    rhythm:null,source:{kind:'text',capturedAt:nowISO()},photos:[],
+    doneDate:null,outcome:'',createdAt:todayStr(),rev:1,history:[],conflicts:[]};
+  Object.assign(t,fields||{});
+  t.history.push({id:uid('h'),at:nowISO(),side:t._side||'app',summary:'Captured',changes:{title:[null,t.title]}});
+  delete t._side;
+  return t;
+}
+/* every app-side change goes through here: rev bump + history entry */
+function changeTask(t,changes,summary,side){
+  const before={};
+  for(const k in changes)before[k]=t[k];
+  Object.assign(t,changes);
+  const delta={};for(const k in changes)delta[k]=[before[k],changes[k]];
+  t.rev++;t.history.push({id:uid('h'),at:nowISO(),side:side||'app',summary:summary||'Edited',changes:delta});
+  persist();
+}
+function lastSharedIndex(inc,loc){ // last incoming history entry also present locally
+  const ids=new Set(loc.history.map(h=>h.id));
+  for(let i=inc.history.length-1;i>=0;i--)if(ids.has(inc.history[i].id))return i;
+  return -1;
+}
+function fieldsChangedAfter(rec,idx){const s=new Set();for(let i=idx+1;i<rec.history.length;i++)for(const k in rec.history[i].changes)s.add(k);return s;}
+
+/* merge one incoming record against local; returns 'added'|'updated'|'kept'|'conflict'|'same' */
+function mergeRecord(incRaw){
+  const inc=JSON.parse(JSON.stringify(incRaw));
+  const loc=state.tasks.find(t=>t.id===inc.id);
+  if(!loc){state.tasks.push(inc);return 'added';}
+  if(JSON.stringify({...loc,history:[],conflicts:[]})===JSON.stringify({...inc,history:[],conflicts:[]}))return 'same';
+  const base=lastSharedIndex(inc,loc);
+  const incNew=inc.history.length-1-base, locNew=loc.history.length-1-base;
+  if(incNew>0&&locNew===0){ // incoming strictly newer: adopt, keep local conflict list
+    const conf=loc.conflicts||[];Object.keys(loc).forEach(k=>{if(k!=='conflicts')loc[k]=inc[k];});loc.conflicts=conf.concat(inc.conflicts||[]);
+    return 'updated';
   }
-  return {state,conflicts,dups,missing};
+  if(locNew>0&&incNew===0)return 'kept';
+  if(locNew===0&&incNew===0)return 'same';
+  // both changed since base: field-level
+  const incF=fieldsChangedAfter(inc,base),locF=fieldsChangedAfter(loc,base);
+  let had=false;
+  for(const k of new Set([...incF,...locF])){
+    if(k==='history'||k==='rev'||k==='conflicts')continue;
+    const same=JSON.stringify(inc[k])===JSON.stringify(loc[k]);
+    if(same)continue;
+    if(incF.has(k)&&!locF.has(k)){loc[k]=inc[k];}
+    else if(!incF.has(k)&&locF.has(k)){/* keep local */}
+    else{ // both sides changed the same field: keep both, never silent last-write-wins
+      const incLast=inc.history.filter(h=>k in h.changes).pop();
+      const locLast=loc.history.filter(h=>k in h.changes).pop();
+      (loc.conflicts=loc.conflicts||[]).push({id:uid('c'),field:k,
+        local:{v:loc[k],at:locLast?locLast.at:null},
+        incoming:{v:inc[k],at:incLast?incLast.at:null,side:incLast?incLast.side:'?'},
+        detectedAt:nowISO(),resolved:false});
+      had=true;
+    }
+  }
+  // merge histories (union by id, sorted by at)
+  const seen=new Set(),merged=[];
+  for(const h of loc.history.concat(inc.history)){if(!seen.has(h.id)){seen.add(h.id);merged.push(h);}}
+  merged.sort((a,b)=>a.at<b.at?-1:1);loc.history=merged;loc.rev=Math.max(loc.rev,inc.rev)+1;
+  return had?'conflict':'updated';
+}
+function resolveConflict(t,c,keep){ // keep: 'local' | 'incoming'
+  if(keep==='incoming')t[c.field]=c.incoming.v;
+  c.resolved=true;c.resolvedAt=nowISO();c.resolution=keep==='local'?'kept device value':'took incoming value';
+  t.rev++;t.history.push({id:uid('h'),at:nowISO(),side:'app',summary:'Resolved a conflict on "'+c.field+'" ('+c.resolution+')',
+    changes:{[c.field]:keep==='local'?[c.incoming.v,c.local.v]:[c.local.v,c.incoming.v]}});
+  persist();
+}
+/* ---- demo data: entirely synthetic, labelled as such ---- */
+/* ---- demo data: unmistakably fictional, every record flagged as an example ---- */
+function seedDemo(){
+  const t=todayStr();
+  const mk=o=>{const x=newTask(o);x.source={kind:'demo',capturedAt:nowISO()};return x;};
+  const hall=mk({title:'Book community hall for trivia night',tags:['errands'],mustWeekOf:weekStart(t),dueDate:addDays(t,7),col:'now',sizeMin:15,effort:'low',interruptible:true,
+    notes:'Example task. Ask about the projector and the deposit.'});
+  const invites=mk({title:'Send trivia night invites',tags:['social'],dependsOn:[hall.id],col:'next',sizeMin:20,effort:'low',
+    notes:'Example task. Waits on the hall booking.'});
+  const ranger=mk({title:'Example application: urban park steward posting',tags:['job-search'],mustWeekOf:weekStart(t),dueDate:addDays(t,2),col:'now',sizeMin:30,effort:'high',interruptible:false,
+    notes:'Fictional posting, standing in for a real application so the job-search section can be tried.'});
+  const resume=mk({title:'Update the example resume summary',tags:['job-search'],col:'now',sizeMin:45,effort:'high',interruptible:false});
+  const ladder=mk({title:'Return the ladder to neighbour Sam',tags:['errands'],notBefore:addDays(t,3),col:'inbox',sizeMin:10,effort:'low',interruptible:true});
+  const gate=mk({title:'Fix the wobbly gate hinge',tags:['home-project'],col:'next',sizeMin:45,effort:'med',interruptible:false});
+  const gear=mk({title:'Camping gear swap',tags:['household'],col:'inbox',sizeMin:30,effort:'low',
+    notes:'Shorthand is enough: summer gear into the bins, winter bags to the front of the closet.'});
+  const trail=mk({title:'Write the trail-guide intro paragraph',tags:['learning'],col:'later',sizeMin:null,effort:'high',
+    notes:'Unknown total size. Next useful step only. Waiting on the map from the hiking club.'});
+  const spanish=mk({title:'Spanish flashcards',tags:['learning'],col:'now',rhythm:{target:5,per:'week',doneDates:[t]},sizeMin:15,effort:'med'});
+  const guitar=mk({title:'Practice guitar',tags:['music'],col:'now',rhythm:{target:3,per:'week',doneDates:[]},sizeMin:30,effort:'low',interruptible:true});
+  const walk=mk({title:'Long walk',tags:['health'],col:'now',rhythm:{target:1,per:'week',doneDates:[]},sizeMin:60,effort:'low'});
+  state.tasks=[hall,invites,ranger,resume,ladder,gate,gear,trail,spanish,guitar,walk];
+  persist();
+}
+function resetAll(){localStorage.removeItem(LS_KEY);state={tasks:[],photos:{}};persist();}
+
+/* ---- queries ---- */
+const openT=()=>state.tasks.filter(t=>t.status==='open');
+const byId=id=>state.tasks.find(t=>t.id===id);
+const isMust=t=>t.mustWeekOf===weekStart(todayStr());
+const carriedMust=t=>t.mustWeekOf&&t.mustWeekOf<weekStart(todayStr())&&t.status==='open';
+const dueSoon=t=>t.dueDate&&daysBetween(todayStr(),t.dueDate)<=3;
+const blocked=t=>(t.dependsOn||[]).some(id=>{const d=byId(id);return d&&d.status!=='done';});
+const parked=t=>t.notBefore&&t.notBefore>todayStr();
+const rhythmDoneThisWeek=t=>{if(!t.rhythm)return 0;const ws=weekStart(todayStr());return (t.rhythm.doneDates||[]).filter(d=>d>=ws).length;};
+function fits(t,budget,eff,inter){
+  if(t.status!=='open'||blocked(t)||parked(t))return false;
+  if(budget&&(t.sizeMin==null||t.sizeMin>budget))return false;
+  if(eff&&t.effort!==eff)return false;
+  if(inter&&t.interruptible!==true)return false;
+  return true;
+}
+function unknownFit(t,eff,inter){ // size unknown so cannot prove the fit
+  if(t.status!=='open'||blocked(t)||parked(t)||t.sizeMin!=null)return false;
+  if(eff&&t.effort!==eff)return false;
+  if(inter&&t.interruptible!==true)return false;
+  return true;
+}
+function pills(t){
+  const p=[];const tdy=todayStr();
+  if(t.source&&t.source.kind==='demo')p.push('<span class="pill">example</span>');
+  if(t.partialImport)p.push('<span class="pill conflict">partial import - details kept as notes</span>');
+  if(isMust(t))p.push('<span class="pill must">must this week</span>');
+  if(t.dueDate){const d=daysBetween(tdy,t.dueDate);
+    p.push('<span class="pill '+(d<0?'due-pass':d<=3?'due-soon':'')+'">due '+niceDay(t.dueDate)+(d<0?' ('+(-d)+'d over)':'')+'</span>');}
+  if(t.plannedDay)p.push('<span class="pill">plan '+niceDay(t.plannedDay)+'</span>');
+  if(t.notBefore&&t.notBefore>tdy)p.push('<span class="pill">after '+niceDay(t.notBefore)+'</span>');
+  if(t.progress&&t.progress.state==='in-progress')p.push('<span class="pill stop">in progress</span>');
+  if((t.conflicts||[]).some(c=>!c.resolved))p.push('<span class="pill conflict">needs attention</span>');
+  if(blocked(t))p.push('<span class="pill">waiting on '+(t.dependsOn||[]).filter(id=>{const d=byId(id);return d&&d.status!=='done';}).map(id=>esc((byId(id)||{}).title||'?')).join(', ')+'</span>');
+  if(t.sizeMin!=null)p.push('<span class="pill">'+t.sizeMin+' min</span>');
+  if(t.effort)p.push('<span class="pill">'+({low:'mindless',med:'some thought',high:'deep focus'})[t.effort]+'</span>');
+  (t.tags||[]).forEach(g=>p.push('<span class="pill">#'+esc(g)+'</span>'));
+  return p.join(' ');
+}
+function taskRow(t,extra){return '<button class="tsk" data-open="'+t.id+'"><div class="t">'+esc(t.title)+'</div><div class="meta">'+pills(t)+(extra||'')+'</div></button>';}
+/* ---- views ---- */
+let curView='capture';
+let filter={budget:0,eff:'',inter:false};
+
+function render(){const m=$('#main');
+  ({capture:vCapture,choose:vChoose,resume:vResume,board:vBoard,done:vDone,more:vMore})[curView](m);
+  bindCommon(m);renderTabs();
+}
+function renderTabs(){const open=openT().filter(t=>(t.conflicts||[]).some(c=>!c.resolved)).length;
+  const items=[['capture','Capture'],['choose','Choose'],['resume','Resume'],['board','Board'],['done','Done'],['more','More'+(open?' <span class="badge">'+open+'</span>':'')]];
+  $('#tabs').innerHTML=items.map(([k,l])=>'<button class="'+(curView===k?'on':'')+'" data-tab="'+k+'">'+l+'</button>').join('');
+  $$('#tabs button').forEach(b=>b.onclick=()=>{curView=b.dataset.tab;render();window.scrollTo(0,0);});
+}
+function bindCommon(m){$$('[data-open]',m).forEach(b=>b.onclick=()=>openSheet(b.dataset.open));}
+
+function vCapture(m){
+  const recent=openT().filter(t=>t.col==='inbox').sort((a,b)=>b.createdAt<a.createdAt?-1:1);
+  m.innerHTML='<div class="view">'
+    +'<div class="card"><h3>Keep the thought</h3><div class="cap">No category, date or estimate needed. Save first; clarify only when useful.</div>'
+    +'<textarea id="capText" placeholder="What\'s on your mind?"></textarea>'
+    +'<div><button class="btn" id="capSave">Save</button>'
+    +'<button class="btn soft" id="capPhoto">Add a photo</button>'
+    +'<input type="file" id="capPhotoFile" accept="image/*" class="hidden"></div>'
+    +'<label class="f">Paste a list from Notes (headings like "Errands:" become groups)</label>'
+    +'<textarea id="capList" placeholder="Errands:\nReturn library books\nBuy batteries"></textarea>'
+    +'<button class="btn soft" id="capListBtn">Review the list</button></div>'
+    +'<h2 class="sec">Inbox - newest first</h2>'
+    +(recent.length?recent.map(t=>taskRow(t)).join(''):'<div class="cap">Nothing waiting to be sorted.</div>')
+    +'</div>';
+  $('#capSave').onclick=()=>{const v=$('#capText').value.trim();if(!v)return flash('Nothing to save yet.');
+    const t=newTask({title:v});state.tasks.unshift(t);persist();flash('Kept. Sort it when useful.');render();};
+  $('#capPhoto').onclick=()=>$('#capPhotoFile').click();
+  $('#capPhotoFile').onchange=e=>{const f=e.target.files[0];if(!f)return;shrinkPhoto(f,du=>{
+    const pid=uid('p');state.photos[pid]=du;
+    const t=newTask({title:'',source:{kind:'photo',capturedAt:nowISO()},photos:[pid]});state.tasks.unshift(t);persist();
+    openSheet(t.id);flash('Photo kept - name it when ready.');});};
+  $('#capListBtn').onclick=()=>{const v=$('#capList').value.trim();if(!v)return flash('Paste a list first.');openListReview(v);};
+}
+function shrinkPhoto(file,cb){const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{
+  const max=800,sc=Math.min(1,max/Math.max(img.width,img.height));
+  const c=document.createElement('canvas');c.width=img.width*sc;c.height=img.height*sc;
+  c.getContext('2d').drawImage(img,0,0,c.width,c.height);cb(c.toDataURL('image/jpeg',0.8));};img.src=r.result;};r.readAsDataURL(file);}
+function openListReview(text){
+  const lines=text.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+  const rows=lines.map((l,i)=>({raw:l,heading:/:\s*$/.test(l),on:true}));
+  const sh=$('#sheet'),inn=$('#sheetIn');
+  function draw(){inn.innerHTML='<button class="x" id="sheetX">✕</button><h2 style="margin-bottom:6px">Review the list</h2>'
+    +'<div class="cap">Tap a line to flip it between heading and task. Headings become a #group on the ticked tasks below. Untick anything already done.</div>'
+    +rows.map((r,i)=>'<label style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)">'
+      +'<input type="checkbox" data-i="'+i+'" '+(r.on?'checked':'')+' style="width:auto">'
+      +'<span style="flex:1;'+(r.heading?'font-weight:600':'')+'">'+esc(r.raw.replace(/:\s*$/,''))+'</span>'
+      +'<button class="btn small soft" data-flip="'+i+'">'+(r.heading?'heading':'task')+'</button></label>').join('')
+    +'<div style="margin-top:10px"><button class="btn" id="addList">Add the ticked tasks</button></div>';
+    inn.querySelector('#sheetX').onclick=()=>sh.style.display='none';
+    inn.querySelectorAll('[data-flip]').forEach(b=>b.onclick=e=>{e.preventDefault();rows[b.dataset.flip].heading=!rows[b.dataset.flip].heading;draw();});
+    inn.querySelectorAll('[data-i]').forEach(c=>c.onchange=()=>{rows[c.dataset.i].on=c.checked;});
+    inn.querySelector('#addList').onclick=()=>{
+      let heads=[],n=0;
+      for(const r of rows){if(!r.on)continue;
+        if(r.heading){heads=[r.raw.replace(/:\s*$/,'').toLowerCase().replace(/[^a-z0-9 ]/g,'').trim().replace(/\s+/g,'-')];continue;}
+        const tagM=[...r.raw.matchAll(/#([a-z0-9-]+)/gi)].map(x=>x[1].toLowerCase());
+        const title=r.raw.replace(/#[a-z0-9-]+/gi,'').trim();
+        const t=newTask({title,source:{kind:'paste',capturedAt:nowISO()},tags:[...new Set(heads.concat(tagM))]});
+        state.tasks.unshift(t);n++;}
+      persist();sh.style.display='none';flash(n+' kept in the inbox.');render();};
+  }
+  draw();sh.style.display='block';
 }
 
+function vChoose(m){
+  const t=todayStr();
+  const musts=openT().filter(isMust), carried=openT().filter(carriedMust);
+  const jobs=openT().filter(t=>(t.tags||[]).includes('job-search')&&!isMust(t));
+  const due=openT().filter(dueSoon);
+  const fitL=openT().filter(x=>!isMust(x)&&!(x.tags||[]).includes('job-search')&&fits(x,filter.budget,filter.eff,filter.inter));
+  const unk=openT().filter(x=>!isMust(x)&&!(x.tags||[]).includes('job-search')&&unknownFit(x,filter.eff,filter.inter));
+  m.innerHTML='<div class="view">'
+    +(due.length?'<div class="notice warn"><b>Due soon:</b> '+due.map(t=>'<a href="#" data-open="'+t.id+'">'+esc(t.title)+'</a> ('+niceDay(t.dueDate)+')').join(', ')+'</div>':'')
+    +(carried.length?'<div class="notice bad"><b>Carried over from last week</b> - needs a fresh decision:'
+      +carried.map(t=>'<div style="margin-top:6px">'+esc(t.title)+' <button class="btn small" data-restamp="'+t.id+'">Still must</button> <button class="btn small soft" data-float="'+t.id+'">Let it float</button></div>').join('')+'</div>':'')
+    +'<h2 class="sec">Must do this week</h2>'+(musts.length?musts.map(t=>taskRow(t)).join(''):'<div class="cap">Nothing flagged.</div>')
+    +'<h2 class="sec">Job search</h2>'+(jobs.length?jobs.map(t=>taskRow(t)).join(''):'<div class="cap">No open job-search tasks.</div>')
+    +'<h2 class="sec">What fits right now</h2>'
+    +'<div class="chips">'+[[0,'any time'],[15,'15 min'],[30,'30 min'],[60,'about an hour']].map(([v,l])=>'<button data-budget="'+v+'" class="'+(filter.budget===v?'on':'')+'">'+l+'</button>').join('')+'</div>'
+    +'<div class="chips">'+[['','any effort'],['low','mindless'],['med','some thought'],['high','deep focus']].map(([v,l])=>'<button data-eff="'+v+'" class="'+(filter.eff===v?'on':'')+'">'+l+'</button>').join('')
+    +'<button data-inter="1" class="'+(filter.inter?'on':'')+'">interruptible</button></div>'
+    +(filter.budget||filter.eff||filter.inter
+      ?(fitL.length?fitL.map(t=>taskRow(t)).join(''):'<div class="cap">Nothing proven to fit. Loosen a filter or pick from the board.</div>')
+       +(unk.length?'<div class="cap" style="margin-top:6px">Can\'t say these fit (size not rated):</div>'+unk.map(t=>taskRow(t)).join(''):'')
+      :'<div class="cap">Pick a time or effort to narrow a small choice. The full board stays under Board.</div>')
+    +'</div>';
+  $$('[data-budget]',m).forEach(b=>b.onclick=()=>{filter.budget=+b.dataset.budget;render();});
+  $$('[data-eff]',m).forEach(b=>b.onclick=()=>{filter.eff=b.dataset.eff;render();});
+  $$('[data-inter]',m).forEach(b=>b.onclick=()=>{filter.inter=!filter.inter;render();});
+  $$('[data-restamp]',m).forEach(b=>b.onclick=()=>{const t=byId(b.dataset.restamp);changeTask(t,{mustWeekOf:weekStart(todayStr())},'Re-stamped must for this week');render();});
+  $$('[data-float]',m).forEach(b=>b.onclick=()=>{const t=byId(b.dataset.float);changeTask(t,{mustWeekOf:null},'Let the must flag float');render();});
+}
+function vResume(m){
+  const t=todayStr();
+  const todayL=openT().filter(x=>x.plannedDay===t);
+  const inprog=openT().filter(x=>x.progress&&x.progress.state==='in-progress');
+  const rhythms=openT().filter(x=>x.rhythm);
+  const slipped=openT().filter(x=>x.plannedDay&&x.plannedDay<t);
+  const coming=openT().filter(x=>x.plannedDay&&x.plannedDay>addDays(t,6));
+  m.innerHTML='<div class="view">'
+    +'<h2 class="sec">In progress - pick up where you stopped</h2>'
+    +(inprog.length?inprog.map(x=>'<div class="card"><h3>'+esc(x.title)+'</h3>'
+      +(x.progress.stoppingPoint?'<div style="font-size:14px;margin:4px 0"><b>Stopped at:</b> '+esc(x.progress.stoppingPoint)+'</div>':'<div class="cap">No stopping point noted.</div>')
+      +'<div class="meta" style="font-size:12.5px;color:var(--mut)">'+pills(x)+'</div>'
+      +'<div style="margin-top:6px"><button class="btn small" data-open="'+x.id+'">Open</button>'
+      +'<button class="btn small soft" data-done="'+x.id+'">Done</button></div></div>').join('')
+      :'<div class="cap">Nothing mid-way. Start something from Choose and it lands here when you stop.</div>')
+    +'<h2 class="sec">Planned for today</h2>'
+    +(todayL.length?todayL.map(x=>taskRow(x)).join(''):'<div class="cap">Nothing planned for today.</div>')
+    +(rhythms.length?'<h2 class="sec">Rhythms - progress, not daily debt</h2>'+rhythms.map(x=>{
+        const n=rhythmDoneThisWeek(x),tgt=x.rhythm.target;
+        const dots='●'.repeat(Math.min(n,tgt))+'○'.repeat(Math.max(0,tgt-n));
+        return '<div class="card rhythm"><h3>'+esc(x.title)+'</h3><div class="dots">'+dots+' <span style="font-size:12.5px;color:var(--mut)">'+n+' of '+tgt+' this '+x.rhythm.per+'</span></div>'
+          +(n>=tgt?'<div class="cap" style="color:var(--grn)">Met for this '+x.rhythm.per+'. Nothing owed.</div>'
+            :'<button class="btn small soft" data-rhythm="'+x.id+'">Log a session</button>')+'</div>';}).join(''):'')
+    +(slipped.length?'<h2 class="sec">Planned days that have passed</h2>'+slipped.map(x=>taskRow(x)).join(''):'')
+    +(coming.length?'<h2 class="sec">Coming weeks</h2>'+coming.map(x=>taskRow(x)).join(''):'')
+    +'</div>';
+  $$('[data-rhythm]',m).forEach(b=>b.onclick=()=>{const x=byId(b.dataset.rhythm);
+    const dd=(x.rhythm.doneDates||[]).concat([todayStr()]);
+    changeTask(x,{rhythm:{...x.rhythm,doneDates:dd}},'Logged a '+x.title+' session');render();});
+  $$('[data-done]',m).forEach(b=>b.onclick=()=>oneTapDone(byId(b.dataset.done)));
+}
 
-function uid(){return 'ev-'+crypto.randomUUID();}
-async function api(url,opt={}){const r=await fetch(url,{...opt,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...(opt.headers||{})}});const t=await r.text();let j;try{j=JSON.parse(t)}catch{j={raw:t}};if(!r.ok)throw new Error(r.status+' '+t.slice(0,300));return j;}
-function setSheet(id){sheetId=id;$('sheet').textContent=id;R.sheetId=id;}
-$('b-signin').onclick=()=>{
-  tc=google.accounts.oauth2.initTokenClient({client_id:CLIENT_ID,scope:SCOPE,callback:resp=>{
-    if(resp.error){log('signin error: '+resp.error);R.signin='error:'+resp.error;return;}
-    token=resp.access_token;tokenExpiry=Date.now()+resp.expires_in*1000;R.signin='ok';R.scope=resp.scope;R.expires_in=resp.expires_in;log('signed in. scope='+resp.scope+' expires_in='+resp.expires_in+'s');}});
-  tc.requestAccessToken({prompt:''});};
-$('b-create').onclick=async()=>{try{
-  const j=await api('https://sheets.googleapis.com/v4/spreadsheets',{method:'POST',body:JSON.stringify({properties:{title:'This Week sync TEST 3 - app-created dummy'},sheets:[{properties:{title:'app-events'}},{properties:{title:'instinct-events'}}]})});
-  setSheet(j.spreadsheetId);log('created '+j.spreadsheetUrl);R.created=j.spreadsheetUrl;
-  for(const tab of ['app-events','instinct-events']){
-    const u=await api('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+tab+'!A1:G1?valueInputOption=RAW',{method:'PUT',body:JSON.stringify({values:[HEAD]})});log('header '+tab+' '+u.updatedRange);}
-  R.steps.push('created+headers');}catch(e){log('ERR '+e.message);R.err=e.message;}};
-$('b-pick').onclick=()=>{gapi.load('picker',()=>{
-  const v=new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS).setMode(google.picker.DocsViewMode.LIST);
-  new google.picker.PickerBuilder().addView(v).setOAuthToken(token).setDeveloperKey(API_KEY).setAppId(APP_ID).setCallback(d=>{
-    if(d.action==='picked'){setSheet(d.docs[0].id);log('picked '+d.docs[0].name+' '+d.docs[0].id);R.picked=d.docs[0].name;}
-    else log('picker '+d.action);}).build().setVisible(true);R.pickerOpened=true;});};
-async function append(tab,ev){
-  const row=[ev.id,ev.entity,ev.field,JSON.stringify(ev.value),ev.actor,JSON.stringify(ev.base),ev.at];
-  const j=await api('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+tab+'!A:G:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{method:'POST',body:JSON.stringify({values:[row]})});
-  const rng=j.updates&&j.updates.updatedRange;const ok=rng&&new RegExp("^'?"+tab+"'?!A\\d+:G\\d+$").test(rng);
-  if(!ok)throw new Error('misplaced append '+rng+' for '+ev.id);
-  return rng;}
-async function readAll(tab){const j=await api('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+tab+'!A2:G?majorDimension=ROWS');
-  return (j.values||[]).map(r=>({id:r[0],entity:r[1],field:r[2],value:JSON.parse(r[3]),actor:r[4],base:JSON.parse(r[5]||'[]'),at:r[6]}));}
-async function allEvents(){return [...await readAll('app-events'),...await readAll('instinct-events')];}
-$('b-write').onclick=async()=>{try{
-  const a={id:uid(),entity:'task-demo-1',field:'title',value:'Water the example plants',actor:'app',base:[],at:new Date().toISOString()};
-  const b={id:uid(),entity:'task-demo-1',field:'title',value:'Water the example plants (edited in app)',actor:'app',base:[a.id],at:new Date().toISOString()};
-  const c={id:uid(),entity:'task-demo-1',field:'status',value:'doing',actor:'app',base:[],at:new Date().toISOString()};
-  R.written=[];for(const e of [a,b,c]){const rng=await append('app-events',e);R.written.push({id:e.id,rng});log('appended '+e.id+' -> '+rng);}
-  R.steps.push('app wrote 3');}catch(e){log('ERR '+e.message);R.err=e.message;}};
-$('b-read').onclick=async()=>{try{
-  const evs=await allEvents();const out=fold(evs);R.fold=out;R.eventCount=evs.length;
-  log('events read: '+evs.length+' ('+evs.filter(e=>e.actor==='app').length+' app, '+evs.filter(e=>e.actor!=='app').length+' other)');
-  log('state: '+JSON.stringify(out.state));log('conflicts: '+JSON.stringify(out.conflicts));log('missing base: '+JSON.stringify(out.missing));
-  if(R.written){const ids=new Set(evs.map(e=>e.id));R.readbackAll=R.written.every(w=>ids.has(w.id));log('read-back of my writes by id: '+R.readbackAll);}
-  R.steps.push('read+fold');}catch(e){log('ERR '+e.message);R.err=e.message;}};
-$('b-conflict').onclick=async()=>{try{
-  const evs=await allEvents();const f=fold(evs);
-  const base=(R.written&&R.written[0])?[R.written[0].id]:[];
-  const e={id:uid(),entity:'task-demo-1',field:'title',value:'Water the example plants (second edit from stale base)',actor:'app',base,at:new Date().toISOString()};
-  R.conflictEvent=e.id;log('appended '+e.id+' -> '+await append('app-events',e));R.steps.push('stale-base edit');}catch(e){log('ERR '+e.message);R.err=e.message;}};
-$('b-resolve').onclick=async()=>{try{
-  const evs=await allEvents();const f=fold(evs);const c=f.conflicts.find(x=>x.field==='title');
-  if(!c){log('no conflict to resolve');return;}
-  const e={id:uid(),entity:c.entity,field:c.field,value:c.candidates[0].value,actor:'app',base:c.candidates.map(x=>x.id),at:new Date().toISOString()};
-  log('resolution '+e.id+' -> '+await append('app-events',e));const f2=fold(await allEvents());R.afterResolve=f2;log('conflicts after: '+JSON.stringify(f2.conflicts));R.steps.push('resolved');}catch(e){log('ERR '+e.message);R.err=e.message;}};
-</script></body></html>
+function vBoard(m){
+  const cols=[['now','Now'],['next','Next'],['later','Later'],['inbox','Inbox (unsorted)']];
+  m.innerHTML='<div class="view"><div class="cap">The whole board, always available. Choose is a lens; nothing hides here.</div>'
+    +cols.map(([k,l])=>{const ts=openT().filter(t=>t.col===k);
+      return '<h2 class="sec">'+l+'</h2>'+(ts.length?ts.map(t=>taskRow(t)).join(''):'<div class="cap">Empty.</div>');}).join('')
+    +'</div>';
+}
+function vDone(m){
+  const done=state.tasks.filter(t=>t.status==='done').sort((a,b)=>(b.doneDate||'')<(a.doneDate||'')?-1:1);
+  const dropped=state.tasks.filter(t=>t.status==='dropped');
+  m.innerHTML='<div class="view"><h2 class="sec">Done - a dated record</h2>'
+    +(done.length?done.map(t=>'<div class="card"><h3>'+esc(t.title)+'</h3><div class="cap">Done '+(t.doneDate||'date not recorded')+(t.outcome?' - '+esc(t.outcome):'')+'</div></div>').join(''):'<div class="cap">Nothing finished yet.</div>')
+    +(dropped.length?'<h2 class="sec">Dropped (deliberate, still on record)</h2>'+dropped.map(t=>'<div class="card"><h3>'+esc(t.title)+'</h3><div class="cap">'+esc(t.outcome||'')+'</div></div>').join(''):'')
+    +'</div>';
+}
+/* ---- task sheet ---- */
+function openSheet(id){const t=byId(id);if(!t)return;const sh=$('#sheet'),inn=$('#sheetIn');
+  const open=openT().filter(x=>x.id!==t.id);
+  inn.innerHTML='<button class="x" id="sheetX">✕</button>'
+    +'<h2 style="margin-bottom:2px">'+esc(t.title||'(unnamed photo)')+'</h2>'
+    +'<div class="cap">captured '+esc(t.createdAt)+(t.source&&t.source.kind!=='text'?' via '+esc(t.source.kind):'')+'</div>'
+    +(t.photos||[]).map(pid=>state.photos[pid]?'<img class="photo" src="'+state.photos[pid]+'">':'').join('')
+    +'<label class="f">Title</label><input type="text" id="sTitle" value="'+esc(t.title)+'">'
+    +'<label class="f">Notes (meaning only you know, kept inside)</label><textarea id="sNotes">'+esc(t.notes)+'</textarea>'
+    +'<label class="f">Tags (space or comma separated)</label><input type="text" id="sTags" value="'+esc((t.tags||[]).join(' '))+'">'
+    +'<div class="row"><div><label class="f">Real due date</label><input type="date" id="sDue" value="'+(t.dueDate||'')+'"></div>'
+    +'<div><label class="f">Planned day (a plan, not the deadline)</label><input type="date" id="sDay" value="'+(t.plannedDay||'')+'"></div></div>'
+    +'<div class="row"><div><label class="f">Not before</label><input type="date" id="sNB" value="'+(t.notBefore||'')+'"></div>'
+    +'<div><label class="f">Rough size (minutes, blank = not rated)</label><input type="number" id="sSize" min="0" step="5" value="'+(t.sizeMin==null?'':t.sizeMin)+'"></div></div>'
+    +'<label class="f">Effort</label><div class="chips" id="sEff">'+[['','not rated'],['low','mindless'],['med','some thought'],['high','deep focus']].map(([v,l])=>'<button data-v="'+v+'" class="'+((t.effort||'')===v?'on':'')+'">'+l+'</button>').join('')+'</div>'
+    +'<label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" id="sInter" style="width:auto" '+(t.interruptible?'checked':'')+'> Can be interrupted and resumed</label>'
+    +'<label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" id="sMust" style="width:auto" '+(isMust(t)?'checked':'')+'> Must do this week</label>'
+    +'<label class="f">Depends on (done first)</label><select id="sDep" multiple size="3">'+open.map(x=>'<option value="'+x.id+'" '+((t.dependsOn||[]).includes(x.id)?'selected':'')+'>'+esc(x.title)+'</option>').join('')+'</select>'
+    +'<label class="f">Column</label><div class="chips" id="sCol">'+['inbox','now','next','later'].map(c=>'<button data-v="'+c+'" class="'+(t.col===c?'on':'')+'">'+c+'</button>').join('')+'</div>'
+    +'<div style="margin-top:10px"><button class="btn" id="sSave">Save changes</button></div>'
+    +(t.status==='open'?'<h2 class="sec">Work on it</h2>'
+      +(t.progress.state!=='in-progress'?'<button class="btn soft" id="sStart">Start now</button>':'')
+      +'<button class="btn soft" id="sProg">Log progress / stopping point</button>'
+      +'<button class="btn soft" id="sDone">Mark done</button>'
+      +'<button class="btn soft" id="sDrop">Drop (kept on record)</button>'
+      +'<button class="btn danger" id="sDel">Delete</button>':'')
+    +'<div class="rev"><b>History</b> (rev '+t.rev+')<ul>'+t.history.slice().reverse().slice(0,12).map(h=>'<li>'+esc(h.at.slice(0,16).replace('T',' '))+' - '+esc(h.side)+': '+esc(h.summary)+'</li>').join('')+'</ul></div>';
+  sh.style.display='block';
+  let eff=t.effort||'';inn.querySelectorAll('#sEff button').forEach(b=>b.onclick=e=>{e.preventDefault();eff=b.dataset.v;inn.querySelectorAll('#sEff button').forEach(x=>x.classList.toggle('on',x===b));});
+  let col=t.col;inn.querySelectorAll('#sCol button').forEach(b=>b.onclick=e=>{e.preventDefault();col=b.dataset.v;inn.querySelectorAll('#sCol button').forEach(x=>x.classList.toggle('on',x===b));});
+  inn.querySelector('#sheetX').onclick=()=>sh.style.display='none';
+  inn.querySelector('#sSave').onclick=()=>{
+    const tags=inn.querySelector('#sTags').value.split(/[\s,]+/).filter(Boolean).map(s=>s.replace(/^#/,'').toLowerCase());
+    const deps=[...inn.querySelector('#sDep').selectedOptions].map(o=>o.value);
+    const ch={title:inn.querySelector('#sTitle').value.trim()||t.title,notes:inn.querySelector('#sNotes').value,
+      tags,dueDate:inn.querySelector('#sDue').value||null,plannedDay:inn.querySelector('#sDay').value||null,
+      notBefore:inn.querySelector('#sNB').value||null,sizeMin:inn.querySelector('#sSize').value===''?null:+inn.querySelector('#sSize').value,
+      effort:eff||null,interruptible:inn.querySelector('#sInter').checked,dependsOn:deps,col,
+      mustWeekOf:inn.querySelector('#sMust').checked?weekStart(todayStr()):null};
+    const diff={};for(const k in ch)if(JSON.stringify(ch[k])!==JSON.stringify(t[k]))diff[k]=ch[k];
+    if(Object.keys(diff).length)changeTask(t,diff,'Edited in the app');
+    sh.style.display='none';render();};
+  const st=inn.querySelector('#sStart');if(st)st.onclick=()=>{changeTask(t,{progress:{state:'in-progress',stoppingPoint:t.progress.stoppingPoint||'',updatedAt:nowISO()}},'Started');sh.style.display='none';curView='resume';render();};
+  const pr=inn.querySelector('#sProg');if(pr)pr.onclick=()=>{
+    const sp=prompt('Where are you stopping? (a short note for future you)',t.progress.stoppingPoint||'');if(sp===null)return;
+    changeTask(t,{progress:{state:'in-progress',stoppingPoint:sp,updatedAt:nowISO()}},'Logged a stopping point');sh.style.display='none';render();};
+  const dn=inn.querySelector('#sDone');if(dn)dn.onclick=()=>oneTapDone(t);
+  const dr=inn.querySelector('#sDrop');if(dr)dr.onclick=()=>{const why=prompt('Why drop it? (kept on the record)','')||'';
+    changeTask(t,{status:'dropped',outcome:why},'Dropped deliberately');sh.style.display='none';render();};
+  const dl=inn.querySelector('#sDel');if(dl)dl.onclick=()=>{
+    const stash=JSON.stringify(t);state.tasks=state.tasks.filter(x=>x.id!==t.id);persist();sh.style.display='none';render();
+    flash('Deleted. ');const f=$('#flash');const u=document.createElement('a');u.href='#';u.textContent='Undo';u.style.cssText='color:#9ec2ff;text-decoration:underline';
+    u.onclick=e=>{e.preventDefault();state.tasks.unshift(JSON.parse(stash));persist();render();f.textContent='Restored.';};f.appendChild(u);};
+}
+/* one tap finishes a task: done right now, no ceremony. Outcome note is optional, offered after. */
+function oneTapDone(t){
+  changeTask(t,{status:'done',doneDate:todayStr(),outcome:'',
+    progress:{state:'not-started',stoppingPoint:'',updatedAt:nowISO()}},'Marked done');
+  $('#sheet').style.display='none';render();
+  const f=$('#flash');f.textContent='Recorded in the done log. ';
+  const u=document.createElement('a');u.href='#';u.textContent='Add an outcome note';u.style.cssText='color:#9ec2ff;text-decoration:underline';
+  u.onclick=e=>{e.preventDefault();openOutcomeSheet(t);};f.appendChild(u);
+}
+function openOutcomeSheet(t){const sh=$('#sheet'),inn=$('#sheetIn');
+  inn.innerHTML='<button class="x" id="sheetX">✕</button><h2>'+esc(t.title)+'</h2>'
+    +'<div class="cap">Done '+esc(t.doneDate||todayStr())+'. A note is optional - change or add one here.</div>'
+    +'<input type="text" id="dOut" placeholder="e.g. turned out easier than expected" value="'+esc(t.outcome||'')+'">'
+    +'<div style="margin-top:10px"><button class="btn" id="dSave">Save the note</button></div>';
+  sh.style.display='block';inn.querySelector('#sheetX').onclick=()=>sh.style.display='none';
+  inn.querySelector('#dSave').onclick=()=>{const v=inn.querySelector('#dOut').value;
+    if(v!==(t.outcome||''))changeTask(t,{outcome:v},'Added an outcome note');
+    sh.style.display='none';render();};
+}
+/* ---- More: attention, backup, about ---- */
+function vMore(m){
+  const confs=openT().concat(state.tasks.filter(t=>t.status!=='open')).filter(t=>(t.conflicts||[]).some(c=>!c.resolved));
+  m.innerHTML='<div class="view">'
+    +(confs.length?'<h2 class="sec">Needs attention - both sides changed the same thing</h2>'
+      +confs.map(t=>t.conflicts.filter(c=>!c.resolved).map(c=>'<div class="card"><h3>'+esc(t.title)+'</h3>'
+        +'<div class="cap">Field: <b>'+esc(c.field)+'</b></div>'
+        +'<div style="font-size:14px">On this device: <b>'+esc(JSON.stringify(c.local.v))+'</b> <span style="color:var(--mut)">('+esc((c.local.at||'').slice(0,16).replace('T',' '))+')</span></div>'
+        +'<div style="font-size:14px;margin-top:4px">Incoming ('+esc(c.incoming.side)+'): <b>'+esc(JSON.stringify(c.incoming.v))+'</b> <span style="color:var(--mut)">('+esc((c.incoming.at||'').slice(0,16).replace('T',' '))+')</span></div>'
+        +'<div style="margin-top:8px"><button class="btn small" data-keep="local" data-t="'+t.id+'" data-c="'+c.id+'">Keep device value</button>'
+        +'<button class="btn small soft" data-keep="incoming" data-t="'+t.id+'" data-c="'+c.id+'">Take incoming value</button></div>'
+        +'<div class="cap" style="margin-top:6px">Both values stay in the history either way. Nothing was overwritten silently.</div></div>').join('')).join('')
+      :'<div class="notice ok">No unresolved conflicts.</div>')
+    +'<h2 class="sec">Backup - a plain file you own</h2>'
+    +'<div class="card"><div class="cap">Everything on this device exports as one readable JSON file. v1/v2 app backups restore here with <b>partial compatibility</b>: tasks, dates, tags and photos carry over; repeating cadences other than weekly and course trackers are kept as notes, flagged on the record, never silently treated as migrated.</div>'
+    +'<button class="btn" id="xExport">Download backup</button>'
+    +'<button class="btn soft" id="xImport">Restore from file</button><input type="file" id="xFile" accept="application/json,.json" class="hidden"></div>'
+    +'<h2 class="sec">Storage, truthfully</h2>'
+    +'<div class="card"><div class="cap">Saved on this device only (browser storage, separate key from the live v2 app - this prototype cannot see or touch v2 data). <b>No sync exists yet</b>: sending this file to Instinct does not update the app. Direct two-way updates need the shared-store decision, which is a separate, unproved test.</div></div>'
+    +'<div class="demo"><b>Prototype controls (dummy data only):</b><br>'
+    +'<button class="btn small soft" id="xSeed">Load demo data</button>'
+    +'<button class="btn small soft" id="xReset">Reset prototype</button></div>'
+    +'</div>';
+  $$('[data-keep]',m).forEach(b=>b.onclick=()=>{const t=byId(b.dataset.t);const c=t.conflicts.find(x=>x.id===b.dataset.c);resolveConflict(t,c,b.dataset.keep);render();});
+  $('#xExport').onclick=()=>{
+    const data={version:3,prototype:true,exportedAt:nowISO(),tasks:state.tasks,
+      photos:Object.entries(state.photos).map(([id,dataUrl])=>({id,dataUrl}))};
+    const blob=new Blob([JSON.stringify(data,null,1)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download='this-week-v3-prototype-backup-'+todayStr()+'.json';document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),5000);};
+  $('#xImport').onclick=()=>$('#xFile').click();
+  $('#xFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
+    r.onload=()=>{try{openRestoreSheet(JSON.parse(r.result));}catch(err){flash('Not a backup file.');}};r.readAsText(f);};
+  $('#xSeed').onclick=()=>{seedDemo();flash('Demo data loaded (synthetic).');render();};
+  $('#xReset').onclick=()=>{resetAll();flash('Prototype reset.');render();};
+}
+function v2toV3(t){ // map a v2 app task onto the v3 record shape, preserving ids. Partial compatibility: unsupported cadences/courses are retained as notes, not silently treated as migrated.
+  const x=newTask({title:t.title||'',notes:t.notes||'',tags:t.tags||[],col:t.col||'inbox',
+    status:t.done?'done':'open',dueDate:t.dueDate||null,plannedDay:t.day||null,notBefore:t.notBefore||null,
+    mustWeekOf:t.mustWeekOf||(t.mustWeek?weekStart(todayStr()):null),sizeMin:t.size==null?null:t.size,
+    effort:t.effort||null,photos:t.photos||[],doneDate:t.doneDate||null,outcome:t.outcome||'',createdAt:t.created||todayStr()});
+  x.id=t.id;x.source={kind:'v2-import',capturedAt:nowISO()};
+  if(t.chore){
+    if(t.chore.everyN===1&&t.chore.unit==='weeks'){x.rhythm={target:1,per:'week',doneDates:t.chore.lastDone?[t.chore.lastDone]:[]};}
+    else{x.partialImport=true;x.notes=(x.notes?x.notes+'\n':'')+'v2 repeating cadence kept as a note, not a live schedule: every '+t.chore.everyN+' '+t.chore.unit+(t.chore.lastDone?', last done '+t.chore.lastDone:'')+'. Set a rhythm again if you still want one.';}
+  }
+  if(t.course){x.partialImport=true;x.notes=(x.notes?x.notes+'\n':'')+'v2 course kept as a note, not a live tracker: '+t.course.totalText+', logged '+(t.course.loggedMin||0)+' min.';}
+  x.history=[{id:uid('h'),at:nowISO(),side:'app',summary:'Imported from a v2 backup'+(x.partialImport?' (partial - see notes)':''),changes:{}}];
+  x.rev=1;return x;
+}
+function openRestoreSheet(data){
+  let incoming=[],photos={};
+  if(data&&data.version===3&&Array.isArray(data.tasks)){incoming=data.tasks;for(const p of data.photos||[])photos[p.id]=p.dataUrl;}
+  else if(data&&Array.isArray(data.tasks)){incoming=data.tasks.map(v2toV3);for(const p of data.photos||[])photos[p.id]=p.dataUrl;} // v1/v2 backup
+  else return flash('Not a backup file.');
+  const sh=$('#sheet'),inn=$('#sheetIn');
+  inn.innerHTML='<button class="x" id="sheetX">✕</button><h2>Restore a backup</h2>'
+    +'<div class="cap">The file holds <b>'+incoming.length+'</b> records. This device holds <b>'+state.tasks.length+'</b>.</div>'
+    +'<button class="btn" id="rMerge">Merge</button> <span class="cap">new and updated records come in; device-only records stay; anything both sides changed is flagged, never silently overwritten</span>'
+    +'<div style="margin-top:8px"><button class="btn danger" id="rReplace">Replace this device</button> <span class="cap">wipe first, then load the file</span></div>';
+  sh.style.display='block';inn.querySelector('#sheetX').onclick=()=>sh.style.display='none';
+  inn.querySelector('#rMerge').onclick=()=>{
+    const counts={added:0,updated:0,kept:0,conflict:0,same:0};
+    for(const inc of incoming)counts[mergeRecord(inc)]++;
+    const partials=incoming.filter(x=>x.partialImport).length;
+    for(const pid in photos)if(!state.photos[pid])state.photos[pid]=photos[pid];
+    persist();sh.style.display='none';render();
+    flash('Merged: '+counts.added+' added, '+counts.updated+' updated, '+counts.conflict+' conflict'+(counts.conflict===1?'':'s')+' flagged, '+counts.same+' unchanged.'+(partials?' '+partials+' carried over partially (details kept as notes).':''));};
+  inn.querySelector('#rReplace').onclick=()=>{
+    state.tasks=JSON.parse(JSON.stringify(incoming));state.photos=photos;persist();sh.style.display='none';render();
+    flash('This device now matches the backup.');};
+}
+
+/* ---- init ---- */
+/* This Week local-first dummy recovery layer, v4. No live deployment. */
+const V4KEY='twV4DummyRecoveryV1';
+const validAccount4=s=>typeof s==='string'&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+const FIELDS=['title','notes','tags','col','status','dueDate','plannedDay','notBefore','mustWeekOf','sizeMin','effort','interruptible','dependsOn','progress','rhythm','source','photos','doneDate','outcome','createdAt','partialImport','deleted'];
+const HEAD4=['id','entity','field','value','actor','base','at'];
+const copy4=x=>JSON.parse(JSON.stringify(x));
+const eventId4=()=> 'ev-'+crypto.randomUUID();
+let vault4={version:4,boardId:crypto.randomUUID(),expectedAccount:null,tasks:[],photos:{},events:[],outbox:[],binding:null,lastSync:null,createPending:false};
+let baseline4={tasks:[],photos:{}};
+let access4=null,expires4=0,account4=null,busy4=false,problem4='',saveFailed4=false,transport4=null,corruptRaw4=null;
+function fold4(raw){
+ const ids=new Map();for(const e of raw){if(ids.has(e.id)&&JSON.stringify(ids.get(e.id))!==JSON.stringify(e))throw Error('Different events share an ID. Sync stopped.');ids.set(e.id,e);}
+ const ancestry=new Map(),visiting=new Set(),missing=[];
+ function anc(id){if(ancestry.has(id))return ancestry.get(id);if(visiting.has(id))throw Error('Circular event history. Sync stopped.');visiting.add(id);const out=new Set();for(const b of ids.get(id).base){if(!ids.has(b)){missing.push(b);continue;}out.add(b);for(const a of anc(b))out.add(a);}visiting.delete(id);ancestry.set(id,out);return out;}
+ for(const id of ids.keys())anc(id);
+ const groups=new Map();for(const e of ids.values()){const k=JSON.stringify([e.entity,e.field]);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(e);}
+ const values={},heads={},conflicts=[];
+ for(const [k,group] of groups){const h=group.filter(e=>!group.some(o=>o.id!==e.id&&anc(o.id).has(e.id)));heads[k]=h;const distinct=new Set(h.map(e=>JSON.stringify(e.value)));if(distinct.size===1){(values[h[0].entity]??={})[h[0].field]=copy4(h[0].value);}else conflicts.push({entity:h[0].entity,field:h[0].field,candidates:copy4(h)});}
+ return {values,heads,conflicts,missing:[...new Set(missing)]};
+}
+function validateEvents4(events){if(!Array.isArray(events))throw Error('Event list is missing.');for(const e of events){if(!e||typeof e.id!=='string'||typeof e.entity!=='string'||typeof e.field!=='string'||!Array.isArray(e.base)||e.base.some(b=>typeof b!=='string')||typeof e.actor!=='string'||!('value'in e)||typeof e.at!=='string')throw Error('Invalid event record.');if(!/^(task|photo):[A-Za-z0-9_-]+$/.test(e.entity))throw Error('Invalid record identifier.');if(!/^(task|photo):[A-Za-z0-9_-]+$/.test(e.entity))throw Error('Invalid record identifier.');if(!/^(task|photo):[A-Za-z0-9_-]+$/.test(e.entity))throw Error('Invalid record identifier.');if(!/^(task|photo):[A-Za-z0-9_-]+$/.test(e.entity))throw Error('Invalid record identifier.');if(!/^(task|photo):[A-Za-z0-9_-]+$/.test(e.entity))throw Error('Invalid record identifier.');if(e.entity.startsWith('task:')&&!FIELDS.includes(e.field))throw Error('Unknown task field.');if(e.entity.startsWith('task:')){const f=e.field,v=e.value;if(['title','notes','outcome','createdAt'].includes(f)&&typeof v!=='string')throw Error('Invalid text field.');if(['tags','dependsOn','photos'].includes(f)&&(!Array.isArray(v)||v.some(x=>typeof x!=='string')))throw Error('Invalid list field.');if(f==='progress'&&(!v||typeof v.state!=='string'||typeof v.stoppingPoint!=='string'))throw Error('Invalid progress.');if(f==='status'&&!['open','done','dropped'].includes(v))throw Error('Invalid task status.');if(f==='col'&&!['inbox','now','next','later'].includes(v))throw Error('Invalid column.');if(f==='rhythm'&&v!==null&&(!Number.isInteger(v.target)||v.target<1||v.target>100||!Array.isArray(v.doneDates)))throw Error('Invalid rhythm.');if(['deleted','partialImport'].includes(f)&&v!==null&&typeof v!=='boolean')throw Error('Invalid flag.');}if(e.entity.startsWith('photo:')&&(e.field!=='data'||typeof e.value!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(e.value)))throw Error('Invalid photo event.');if(e.entity.startsWith('photo:')&&(e.field!=='data'||typeof e.value!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(e.value)))throw Error('Invalid photo event.');if(e.entity.startsWith('photo:')&&(e.field!=='data'||typeof e.value!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(e.value)))throw Error('Invalid photo event.');if(e.entity.startsWith('photo:')&&(e.field!=='data'||typeof e.value!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(e.value)))throw Error('Invalid photo event.');if(e.entity.startsWith('photo:')&&(e.field!=='data'||typeof e.value!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(e.value)))throw Error('Invalid photo event.');if(!e.entity.startsWith('task:')&&!e.entity.startsWith('photo:'))throw Error('Unknown record type.');}fold4(events);}
+function envelope4(){return {...vault4,tasks:state.tasks,photos:state.photos};}
+function writeLocal4(next){localStorage.setItem(V4KEY,JSON.stringify(next));}
+function updateChip4(){const c=$('#storeChip');if(!c)return;c.textContent=saveFailed4?'Not saved - download recovery':busy4?'Syncing...':vault4.outbox.length?'Saved here · sync waiting':vault4.lastSync?'Synced · saved here':'Saved on this device';c.style.color=saveFailed4?'#a31820':'';}
+function status4(){if(saveFailed4)return 'Storage could not save the latest change. Keep this page open and download a recovery file.';if(problem4)return problem4;if(!vault4.binding)return 'Saved on this device. No Google sheet linked.';if(!access4||Date.now()>=expires4)return 'Saved on this device. Connect Google when you want to sync.';return vault4.outbox.length?'Changes are waiting to sync.':'Connected for this session. Your board also stays on this device.';}
+function diffEvents4(){const out=[],f=fold4(vault4.events),old=new Map(baseline4.tasks.map(t=>[t.id,t]));
+ for(const t of state.tasks){const prev=old.get(t.id);old.delete(t.id);for(const field of FIELDS){const v=field==='deleted'?false:(t[field]??null);if(!prev||JSON.stringify(prev[field]??(field==='deleted'?false:null))!==JSON.stringify(v)){const entity='task:'+t.id,k=JSON.stringify([entity,field]);out.push({id:eventId4(),entity,field,value:copy4(v),actor:'app',base:(f.heads[k]||[]).map(e=>e.id),at:nowISO()});}}}
+ for(const [id]of old){const entity='task:'+id,k=JSON.stringify([entity,'deleted']);out.push({id:eventId4(),entity,field:'deleted',value:true,actor:'app',base:(f.heads[k]||[]).map(e=>e.id),at:nowISO()});}
+ for(const [id,v]of Object.entries(state.photos)){if(baseline4.photos[id]===v)continue;const entity='photo:'+id,k=JSON.stringify([entity,'data']);out.push({id:eventId4(),entity,field:'data',value:v,actor:'app',base:(f.heads[k]||[]).map(e=>e.id),at:nowISO()});}return out;}
+persist=function(){if(corruptRaw4!==null){showRecovery4();throw Error('Stored recovery copy needs review before new saves.');}const changes=diffEvents4(),next={...envelope4(),events:vault4.events.concat(changes),outbox:vault4.outbox.concat(changes.map(e=>e.id))};try{writeLocal4(next);}catch(e){saveFailed4=true;problem4='Could not save this change on the device. Keep this page open; download recovery from More.';updateChip4();showRecovery4();throw Error(problem4);}vault4=copy4(next);baseline4=copy4(state);saveFailed4=false;updateChip4();return true;};
+load=function(){try{const s=localStorage.getItem(V4KEY);if(s){const x=JSON.parse(s);validateBackup4(x);vault4=x;state={tasks:copy4(x.tasks),photos:copy4(x.photos)};}else{state={tasks:[],photos:{}};writeLocal4(envelope4());}baseline4=copy4(state);}catch(e){corruptRaw4=localStorage.getItem(V4KEY)||'';problem4='Stored board could not be opened safely. Export the stored recovery copy before restoring another file.';saveFailed4=true;state={tasks:[],photos:{}};}updateChip4();};
+resetAll=function(){if(vault4.binding||vault4.events.length||state.tasks.length){if(!confirm('Start a separate empty dummy board? Download a backup first. This does not delete any Google sheet.'))return;}const next={version:4,boardId:crypto.randomUUID(),expectedAccount:null,tasks:[],photos:{},events:[],outbox:[],binding:null,lastSync:null,createPending:false};writeLocal4(next);vault4=next;state={tasks:[],photos:{}};baseline4=copy4(state);access4=null;account4=null;problem4='';saveFailed4=false;};
+function validateBackup4(x){if(!x||x.version!==4||typeof x.boardId!=='string'||!Array.isArray(x.tasks)||!x.photos||Array.isArray(x.photos)||!Array.isArray(x.outbox))throw Error('Not a v4 backup.');if(x.expectedAccount!==null&&!validAccount4(x.expectedAccount))throw Error('Invalid expected account.');validateEvents4(x.events);const ids=new Set(x.events.map(e=>e.id));if(x.outbox.some(id=>!ids.has(id)))throw Error('Pending event is missing.');if(x.binding&&(!/^[A-Za-z0-9_-]+$/.test(x.binding.sheetId)||x.binding.boardId!==x.boardId||x.binding.account!==x.expectedAccount))throw Error('Invalid board binding.');for(const t of x.tasks){if(!/^[A-Za-z0-9_-]+$/.test(t.id)||typeof t.title!=='string'||typeof t.notes!=='string'||!Array.isArray(t.tags)||t.tags.some(v=>typeof v!=='string')||!Array.isArray(t.history)||t.history.some(h=>!h.id||typeof h.at!=='string'||!h.changes)||!Array.isArray(t.conflicts)||!t.progress||!Array.isArray(t.photos)||!Array.isArray(t.dependsOn))throw Error('Invalid task.');}for(const [id,v] of Object.entries(x.photos))if(!/^[A-Za-z0-9_-]+$/.test(id)||typeof v!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(v))throw Error('Invalid photo.');}
+function download4(data,name){const u=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);}
+function backup4(){if(corruptRaw4!==null){download4({format:'this-week-damaged-storage-recovery',raw:corruptRaw4},'this-week-stored-recovery.json');return;}const x=envelope4();x.recoveryOnly=saveFailed4;download4(x,'this-week-v4-dummy-'+todayStr()+'.json');}
+function showRecovery4(){let box=$('#recovery4');if(!box){box=document.createElement('div');box.id='recovery4';box.className='notice bad';box.style.margin='10px 14px';document.querySelector('header').after(box);}box.innerHTML='<b>Not saved on this device.</b> Keep this page open. <button class="btn small" id="recoverNow4">Download recovery</button>';$('#recoverNow4').onclick=backup4;}
+function saveEnvelope4(next){try{writeLocal4(next);}catch(e){saveFailed4=true;problem4='Could not save this update locally. Keep the page open and download recovery.';updateChip4();showRecovery4();throw Error(problem4);}vault4=copy4(next);baseline4=copy4(state);updateChip4();}
+function materialize4(events){validateEvents4(events);const f=fold4(events);if(f.missing.length)throw Error('Event history has missing bases. Pending changes kept.');const tasks=new Map(state.tasks.map(t=>[t.id,copy4(t)])),photos=copy4(state.photos);
+ for(const [entity,vals]of Object.entries(f.values)){if(entity.startsWith('photo:')){if(typeof vals.data==='string')photos[entity.slice(6)]=vals.data;continue;}const id=entity.slice(5);let t=tasks.get(id);if(!t){t=newTask({id,title:'Incoming dummy task'});tasks.set(id,t);}for(const [k,v]of Object.entries(vals)){if(k!=='deleted')t[k]=copy4(v);}t.deleted=vals.deleted===true;}
+ for(const t of tasks.values())t.conflicts=(t.conflicts||[]).filter(c=>!c.sync4||c.resolved);
+ for(const c of f.conflicts){if(!c.entity.startsWith('task:'))throw Error('Photo conflict requires recovery; nothing overwritten.');const id=c.entity.slice(5);let t=tasks.get(id);if(!t){t=newTask({id});tasks.set(id,t);}const known=t[c.field];if(!c.candidates.some(e=>JSON.stringify(e.value)===JSON.stringify(known)))t[c.field]=null;t.conflicts.push({id:'sync-'+c.candidates.map(e=>e.id).sort().join(':'),field:c.field,sync4:true,candidates:c.candidates,resolved:false});}
+ return {tasks:[...tasks.values()].filter(t=>!t.deleted),photos};}
+const oldResolve4=resolveConflict;
+resolveConflict=function(t,c,keep){if(!c.sync4)return oldResolve4(t,c,keep);const candidate=c.candidates.find(e=>e.id===keep);if(!candidate)throw Error('Choose one of the displayed versions.');const event={id:eventId4(),entity:'task:'+t.id,field:c.field,value:copy4(candidate.value),actor:'app',base:c.candidates.map(e=>e.id),at:nowISO()};const all=vault4.events.concat([event]),previous=copy4(state);state=materialize4(all);const next={...envelope4(),events:all,outbox:vault4.outbox.concat([event.id])};try{saveEnvelope4(next);}catch(e){state=previous;throw e;}flash('Your choice is saved here. Both earlier versions remain in the event history.');};
+async function request4(path,options={}){if(!access4||Date.now()>=expires4){access4=null;throw Error('Connect Google to sync. Your local changes are safe.');}if(transport4)return transport4.request(path,options);const r=await fetch(path,{...options,headers:{Authorization:'Bearer '+access4,'Content-Type':'application/json',...(options.headers||{})}});if(r.status===401){access4=null;throw Error('Connection expired. Connect Google again; local changes are kept.');}if(!r.ok)throw Error('Google request failed ('+r.status+'). Local changes kept.');return r.json();}
+function canConnect4(){return location.origin==='https://jamesmckee2020.github.io'||location.origin==='http://localhost:8080';}
+async function connect4(){if(busy4)return;if(!vault4.expectedAccount){problem4='Set the Google account for this dummy board below before connecting.';render();return;}if(!canConnect4()&&!transport4){problem4='Google connection needs the approved test web address. This downloaded file still saves locally. Nothing has been uploaded.';render();return;}try{if(!window.google?.accounts?.oauth2){await new Promise((ok,no)=>{const s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.onload=ok;s.onerror=()=>no(Error('Google sign-in could not load. Local work still saves.'));document.head.append(s);});problem4='Google sign-in is ready. Tap Connect Google again to open it.';render();return;}const client=google.accounts.oauth2.initTokenClient({client_id:'701914526594-e1bl0dm3f5drujfjnb5l0hc40m3844a0.apps.googleusercontent.com',scope:'https://www.googleapis.com/auth/drive.file',login_hint:vault4.expectedAccount,error_callback:()=>{problem4='Sign-in was closed or unavailable. Local work still saves.';render();},callback:async resp=>{try{if(resp.error)throw Error('Google connection was not granted.');access4=resp.access_token;expires4=Date.now()+resp.expires_in*1000;const who=await request4('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)');account4=who.user?.emailAddress?.toLowerCase();if(account4!==vault4.expectedAccount){access4=null;throw Error('This board expects '+vault4.expectedAccount+'. No sheet writes were made.');}problem4='';if(vault4.binding)await sync4();else render();}catch(e){problem4=e.message;render();}}});client.requestAccessToken({prompt:''});}catch(e){problem4=e.message;render();}}
+async function verifyBinding4(){const b=vault4.binding;if(!b)throw Error('No sheet linked. Create a dummy sheet once.');if(account4!==b.account)throw Error('Account does not match the saved board. No writes made.');const root='https://sheets.googleapis.com/v4/spreadsheets/'+b.sheetId;const meta=await request4(root+'/values/board-meta!A1:B3');if(JSON.stringify(meta.values)!==JSON.stringify([['This Week dummy board','4'],['boardId',vault4.boardId],['account',b.account]]))throw Error('This is not the expected dummy board. No writes made.');for(const tab of ['app-events','instinct-events']){const h=await request4(root+'/values/'+tab+'!A1:G1');if(JSON.stringify(h.values?.[0])!==JSON.stringify(HEAD4))throw Error('Sheet columns changed. No writes made.');}return root;}
+async function readEvents4(root){const all=[];for(const tab of ['app-events','instinct-events']){const j=await request4(root+'/values/'+tab+'!A2:G');for(const r of j.values||[]){if(!r.length)continue;if(r.length!==7)throw Error('Unexpected event columns. Sync stopped.');all.push({id:r[0],entity:r[1],field:r[2],value:JSON.parse(r[3]),actor:r[4],base:JSON.parse(r[5]),at:r[6]});}}validateEvents4(all);return all;}
+async function createSheet4(){if(busy4||vault4.binding)return;if(vault4.createPending){problem4='A previous create may have reached Google. Do not create another. Keep the backup and recover that sheet first.';render();return;}if(!account4){problem4='Connect Google before creating the dummy sheet.';render();return;}busy4=true;problem4='';try{saveEnvelope4({...envelope4(),createPending:true});const data={properties:{title:'This Week v4 DUMMY '+vault4.boardId.slice(0,8)},sheets:['app-events','instinct-events','board-meta'].map(title=>({properties:{title}}))};const j=await request4('https://sheets.googleapis.com/v4/spreadsheets',{method:'POST',body:JSON.stringify(data)});if(!/^[A-Za-z0-9_-]+$/.test(j.spreadsheetId||''))throw Error('Google did not return a valid sheet ID.');saveEnvelope4({...envelope4(),binding:{sheetId:j.spreadsheetId,boardId:vault4.boardId,account:account4,url:j.spreadsheetUrl||null,ready:false}});await initializeSheet4();}catch(e){problem4=e.message;}finally{busy4=false;render();}}
+async function initializeSheet4(){const b=vault4.binding;if(!b||b.ready)return;if(account4!==b.account)throw Error('Wrong Google account. No writes made.');if(account4!==b.account)throw Error('Wrong Google account. No writes made.');if(account4!==b.account)throw Error('Wrong Google account. No writes made.');if(account4!==b.account)throw Error('Wrong Google account. No writes made.');if(account4!==b.account)throw Error('Wrong Google account. No writes made.');const root='https://sheets.googleapis.com/v4/spreadsheets/'+b.sheetId;for(const tab of ['app-events','instinct-events']){const h=await request4(root+'/values/'+tab+'!A1:G1');if(h.values?.length&&JSON.stringify(h.values[0])!==JSON.stringify(HEAD4))throw Error('Unexpected sheet header. Initialization stopped.');if(!h.values?.length)await request4(root+'/values/'+tab+'!A1:G1?valueInputOption=RAW',{method:'PUT',body:JSON.stringify({values:[HEAD4]})});}const m=await request4(root+'/values/board-meta!A1:B3');const expected=[['This Week dummy board','4'],['boardId',vault4.boardId],['account',account4]];if(m.values?.length&&JSON.stringify(m.values)!==JSON.stringify(expected))throw Error('Unexpected board metadata. Initialization stopped.');if(!m.values?.length)await request4(root+'/values/board-meta!A1:B3?valueInputOption=RAW',{method:'PUT',body:JSON.stringify({values:expected})});saveEnvelope4({...envelope4(),binding:{...b,ready:true},createPending:false});}
+async function sync4(){if(busy4||saveFailed4)return;busy4=true;problem4='';updateChip4();try{if(!navigator.onLine&&!transport4)throw Error('Offline. Your changes stay on this device.');if(vault4.binding&&!vault4.binding.ready)await initializeSheet4();const root=await verifyBinding4();let remote=await readEvents4(root);let combined=[...vault4.events,...remote];const unique=new Map();for(const e of combined){if(unique.has(e.id)&&JSON.stringify(unique.get(e.id))!==JSON.stringify(e))throw Error('Event ID mismatch.');unique.set(e.id,e);}combined=[...unique.values()];const remoteIds=new Set(remote.map(e=>e.id));const pending=vault4.outbox.map(id=>combined.find(e=>e.id===id)).filter(e=>!remoteIds.has(e.id));const nextState=materialize4(combined);state=nextState;saveEnvelope4({...envelope4(),events:combined});for(const e of pending){if(e.entity.startsWith('photo:')&&JSON.stringify(e.value).length>40000)throw Error('This photo is too large for one sheet cell. Kept on this device and in backups; sync is not complete.');const row=[e.id,e.entity,e.field,JSON.stringify(e.value),e.actor,JSON.stringify(e.base),e.at];const j=await request4(root+'/values/app-events!A:G:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{method:'POST',body:JSON.stringify({values:[row]})});if(!/^'?app-events'?!A\d+:G\d+$/.test(j.updates?.updatedRange||''))throw Error('Write landed outside the expected columns. Sync stopped.');}
+ remote=await readEvents4(root);const confirmed=new Map(remote.map(e=>[e.id,JSON.stringify(e)]));for(const e of combined.filter(e=>vault4.outbox.includes(e.id)))if(confirmed.get(e.id)!==JSON.stringify(e))throw Error('Read-back has not confirmed every pending change.');fold4([...vault4.events,...remote]);const union=new Map([...vault4.events,...remote].map(e=>[e.id,e]));const final=[...union.values()];state=materialize4(final);const remaining=vault4.outbox.filter(id=>!confirmed.has(id));saveEnvelope4({...envelope4(),events:final,outbox:remaining,lastSync:nowISO()});flash(remaining.length?'Read-back confirmed. Newer local changes are still waiting.':'Sync confirmed.');}catch(e){problem4=e.message;}finally{busy4=false;updateChip4();render();}}
+function configureAccount4(value){const account=String(value).trim().toLowerCase();if(!validAccount4(account))throw Error('Enter a valid Google account email.');if(vault4.binding&&vault4.binding.account!==account)throw Error('This board is already bound to another account. No account change made.');saveEnvelope4({...envelope4(),expectedAccount:account});access4=null;account4=null;problem4='Expected account saved only on this device and in your private backups.';}
+function syncPanel4(){return '<h2 class="sec">Google sync · dummy board only</h2><div class="card">'+(!vault4.expectedAccount?'<label class="f" for="accountInput4">Google account to use for this dummy board</label><input type="text" id="accountInput4" placeholder="Your Google account email" autocomplete="email"><button class="btn soft" id="saveAccount4">Save expected account on this device</button><p class="cap">This is private local configuration, not part of the app code.</p>':'<p class="cap">Expected Google account: '+esc(vault4.expectedAccount)+'</p>')+'<p class="cap">'+esc(status4())+'</p><p class="cap">'+vault4.outbox.length+' changes waiting. '+(vault4.lastSync?'Last confirmed: '+esc(new Date(vault4.lastSync).toLocaleString()):'No sync confirmed yet.')+'</p><button class="btn" id="connect4">Connect Google</button><button class="btn soft" id="sync4" '+(!vault4.binding||busy4?'disabled':'')+'>Sync now</button>'+(!vault4.binding?'<button class="btn soft" id="create4" '+(busy4||vault4.createPending?'disabled':'')+'>Create one dummy sheet</button>':'<p class="cap">This board remembers its sheet. Reconnecting does not create a new one.</p>')+'<p class="cap">Downloaded file: local saving works. Google sync needs an approved web origin and explicit deployment. No Picker or browser API key is used. Photos stay in backup; large photos cannot yet sync.</p></div>';}
+const oldMore4=vMore;
+vMore=function(m){const original=state.tasks.map(t=>[t,t.conflicts]);for(const [t,cs]of original)t.conflicts=cs.filter(c=>!c.sync4);try{oldMore4(m);}finally{for(const[t,cs]of original)t.conflicts=cs;}const view=m.querySelector('.view');if(original.some(([t,cs])=>cs.some(c=>c.sync4&&!c.resolved))){const empty=view.querySelector('.notice.ok');if(empty)empty.remove();}view.insertAdjacentHTML('afterbegin',syncPanel4());const ac=$('#saveAccount4');if(ac)ac.onclick=()=>{try{configureAccount4($('#accountInput4').value);}catch(e){problem4=e.message;}render();};$('#connect4').onclick=connect4;$('#sync4').onclick=sync4;const cr=$('#create4');if(cr)cr.onclick=createSheet4;
+ for(const t of state.tasks)for(const c of (t.conflicts||[]).filter(c=>c.sync4&&!c.resolved)){const box=document.createElement('div');box.className='card';box.innerHTML='<h3>Choose a version · '+esc(c.field)+'</h3><p class="cap">Neither version is chosen for you. Both stay in the event history.</p>'+c.candidates.map(e=>'<div style="margin:8px 0"><p>'+esc(JSON.stringify(e.value))+'</p><p class="cap">'+esc(e.actor)+' · '+esc(e.at)+'</p><button class="btn small soft" data-resolve4="'+esc(e.id)+'">Use this version</button></div>').join('');view.prepend(box);box.querySelectorAll('[data-resolve4]').forEach(b=>b.onclick=()=>{resolveConflict(t,c,b.dataset.resolve4);render();});}
+ $('#xExport').onclick=backup4;$('#xFile').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const x=JSON.parse(await file.text());if(x.version!==4){problem4='This recovery version restores only its own v4 dummy backups. Older imports remain available in the v3 file; no real migration is supported here.';render();return;}validateBackup4(x);if(x.recoveryOnly)throw Error('Recovery-only file contains an unconfirmed save. Keep it and ask for recovery review before restoring.');if(!confirm('Replace only this v4 dummy board with the backup? Download the current backup first.'))return;writeLocal4(x);vault4=copy4(x);state={tasks:copy4(x.tasks),photos:copy4(x.photos)};baseline4=copy4(state);access4=null;account4=null;problem4='Backup restored. Connect Google only when you want to sync.';render();}catch(err){problem4='Backup not restored: '+err.message;render();}};
+ const cards=[...view.querySelectorAll('.card')];for(const card of cards){if(card.textContent.includes('Saved on this device only (browser storage'))card.innerHTML='<p class="cap">Local-first dummy prototype. Changes and pending sync events are saved together under a separate browser key. No live v2 data is read or changed. Sharing an origin is not a security boundary. Browser storage can be cleared or evicted; keep backups. iPhone recovery and long-term use of this version still need testing.</p>';if(card.textContent.includes('v1/v2 app backups restore here'))card.querySelector('.cap').textContent='Export this board, its photos, event history, remembered sheet and pending changes as one readable JSON file. No Google tokens are included. This v4 dummy version restores v4 backups only; no migration from the real board.';}
+};
+const renderOld4=render;
+render=function(){renderOld4();updateChip4();if(vault4.outbox.length&&$('#flash').textContent==='Sync confirmed.')$('#flash').textContent='';};
+window.addEventListener('online',()=>{problem4='Back online. Connect Google or tap Sync now when ready.';updateChip4();});
+window.addEventListener('error',e=>{if(saveFailed4)e.preventDefault();});
+// Testing hook is local only: no credentials or account setup. Remote calls are replaced in automated tests.
+window.TW4={get:()=>copy4(envelope4()),fold:fold4,configure:configureAccount4,setTransport:(t,account=vault4.expectedAccount)=>{transport4=t;account4=account;access4='mock-only';expires4=Date.now()+3600000;},expire:()=>{access4=null;expires4=0;},sync:sync4,create:createSheet4,edit:(id,ch)=>changeTask(byId(id),ch,'Dummy test edit'),capture:title=>{const t=newTask({title});state.tasks.unshift(t);persist();return t.id;},receive:events=>{validateEvents4(events);const all=vault4.events.concat(events);state=materialize4(all);saveEnvelope4({...envelope4(),events:all});render();},restore:x=>{validateBackup4(x);writeLocal4(x);load();render();},render};
+
+load();render();if(saveFailed4)showRecovery4();
+</script>
+</body>
+</html>
