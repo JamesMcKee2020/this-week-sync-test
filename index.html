@@ -1,0 +1,109 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>This Week sync TEST (dummy data only)</title>
+<style>body{font:16px system-ui;margin:16px;max-width:720px}button{font:inherit;padding:12px 14px;margin:4px 4px 4px 0;border-radius:10px;border:1px solid #888;background:#fff}
+button.p{background:#1a56db;color:#fff;border-color:#1a56db}pre{background:#f4f4f4;padding:10px;border-radius:8px;white-space:pre-wrap;word-break:break-all;font-size:13px}.warn{background:#fff3cd;padding:8px;border-radius:8px}</style></head><body>
+<h1>This Week sync TEST</h1>
+<p class="warn">Isolated test page. Dummy data only. Not the live app. Writes only to a sheet this page creates or you pick. The sign-in token is kept in memory only.</p>
+<div>
+<button class="p" id="b-signin">1. Sign in with Google</button>
+<button id="b-create">2. Create dummy sheet</button>
+<button id="b-pick">2b. Pick an existing sheet</button>
+<button id="b-write">3. Write 3 app events</button>
+<button id="b-read">4. Read back and fold</button>
+<button id="b-conflict">5. Write conflicting edit</button>
+<button id="b-resolve">6. Resolve conflict</button>
+</div>
+<p>Sheet: <span id="sheet">none</span></p>
+<pre id="log"></pre>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://apis.google.com/js/api.js" async defer></script>
+<script>
+const CLIENT_ID='701914526594-e1bl0dm3f5drujfjnb5l0hc40m3844a0.apps.googleusercontent.com';
+const API_KEY='AIzaSyAhrv77l1wZR7ZLrKamaDFlB0Ed0nrrESI';
+const APP_ID='701914526594';
+const SCOPE='https://www.googleapis.com/auth/drive.file';
+const HEAD=['id','entity','field','value','actor','base','at'];
+const R={steps:[]};window.__result=R;
+const log=m=>{const s=(typeof m==='string'?m:JSON.stringify(m));document.getElementById('log').textContent+=s+'\n';};
+let token=null,tokenExpiry=0,tc=null,sheetId=null;
+const $=id=>document.getElementById(id);
+// Event-log fold with causal base ancestry. Event: {id,entity,field,value,actor,base:[ids],at}
+// base = ids of the latest events for that entity+field the writer had materialized when writing.
+function fold(rawEvents){
+  const byId=new Map();let dups=0;
+  for(const e of rawEvents){ if(byId.has(e.id)){dups++;continue;} byId.set(e.id,e); }
+  const missing=[];
+  for(const e of byId.values()) for(const b of e.base||[]) if(!byId.has(b)) missing.push({event:e.id,missingBase:b});
+  // an event is superseded if any other event lists it in base (directly) or transitively
+  const supersedes=new Map(); // id -> set of ids it descends from
+  const anc=id=>{ if(supersedes.has(id))return supersedes.get(id); supersedes.set(id,new Set());
+    const s=new Set();for(const b of byId.get(id).base||[]){ if(!byId.has(b))continue; s.add(b); for(const x of anc(b))s.add(x);} supersedes.set(id,s);return s;};
+  for(const id of byId.keys())anc(id);
+  const state={},conflicts=[];
+  const groups={};
+  for(const e of byId.values()){ (groups[e.entity+'\u0000'+e.field]??=[]).push(e); }
+  for(const key in groups){
+    const evs=groups[key];
+    const heads=evs.filter(e=>!evs.some(o=>o.id!==e.id&&anc(o.id).has(e.id)));
+    const [entity,field]=key.split('\u0000');
+    (state[entity]??={})[field]=null;
+    const vals=[...new Set(heads.map(h=>JSON.stringify(h.value)))];
+    if(heads.length===1||vals.length===1){ state[entity][field]=heads[0].value; }
+    else{ // concurrent heads with different values: keep all, flag, never pick a winner
+      state[entity][field]=undefined; conflicts.push({entity,field,candidates:heads.map(h=>({id:h.id,actor:h.actor,value:h.value,at:h.at}))}); }
+  }
+  return {state,conflicts,dups,missing};
+}
+
+
+function uid(){return 'ev-'+crypto.randomUUID();}
+async function api(url,opt={}){const r=await fetch(url,{...opt,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...(opt.headers||{})}});const t=await r.text();let j;try{j=JSON.parse(t)}catch{j={raw:t}};if(!r.ok)throw new Error(r.status+' '+t.slice(0,300));return j;}
+function setSheet(id){sheetId=id;$('sheet').textContent=id;R.sheetId=id;}
+$('b-signin').onclick=()=>{
+  tc=google.accounts.oauth2.initTokenClient({client_id:CLIENT_ID,scope:SCOPE,callback:resp=>{
+    if(resp.error){log('signin error: '+resp.error);R.signin='error:'+resp.error;return;}
+    token=resp.access_token;tokenExpiry=Date.now()+resp.expires_in*1000;R.signin='ok';R.scope=resp.scope;R.expires_in=resp.expires_in;log('signed in. scope='+resp.scope+' expires_in='+resp.expires_in+'s');}});
+  tc.requestAccessToken({prompt:''});};
+$('b-create').onclick=async()=>{try{
+  const j=await api('https://sheets.googleapis.com/v4/spreadsheets',{method:'POST',body:JSON.stringify({properties:{title:'This Week sync TEST 3 - app-created dummy'},sheets:[{properties:{title:'app-events'}},{properties:{title:'instinct-events'}}]})});
+  setSheet(j.spreadsheetId);log('created '+j.spreadsheetUrl);R.created=j.spreadsheetUrl;
+  for(const tab of ['app-events','instinct-events']){
+    const u=await api('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+tab+'!A1:G1?valueInputOption=RAW',{method:'PUT',body:JSON.stringify({values:[HEAD]})});log('header '+tab+' '+u.updatedRange);}
+  R.steps.push('created+headers');}catch(e){log('ERR '+e.message);R.err=e.message;}};
+$('b-pick').onclick=()=>{gapi.load('picker',()=>{
+  const v=new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS).setMode(google.picker.DocsViewMode.LIST);
+  new google.picker.PickerBuilder().addView(v).setOAuthToken(token).setDeveloperKey(API_KEY).setAppId(APP_ID).setCallback(d=>{
+    if(d.action==='picked'){setSheet(d.docs[0].id);log('picked '+d.docs[0].name+' '+d.docs[0].id);R.picked=d.docs[0].name;}
+    else log('picker '+d.action);}).build().setVisible(true);R.pickerOpened=true;});};
+async function append(tab,ev){
+  const row=[ev.id,ev.entity,ev.field,JSON.stringify(ev.value),ev.actor,JSON.stringify(ev.base),ev.at];
+  const j=await api('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+tab+'!A:G:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{method:'POST',body:JSON.stringify({values:[row]})});
+  const rng=j.updates&&j.updates.updatedRange;const ok=rng&&new RegExp("^'?"+tab+"'?!A\\d+:G\\d+$").test(rng);
+  if(!ok)throw new Error('misplaced append '+rng+' for '+ev.id);
+  return rng;}
+async function readAll(tab){const j=await api('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/'+tab+'!A2:G?majorDimension=ROWS');
+  return (j.values||[]).map(r=>({id:r[0],entity:r[1],field:r[2],value:JSON.parse(r[3]),actor:r[4],base:JSON.parse(r[5]||'[]'),at:r[6]}));}
+async function allEvents(){return [...await readAll('app-events'),...await readAll('instinct-events')];}
+$('b-write').onclick=async()=>{try{
+  const a={id:uid(),entity:'task-demo-1',field:'title',value:'Water the example plants',actor:'app',base:[],at:new Date().toISOString()};
+  const b={id:uid(),entity:'task-demo-1',field:'title',value:'Water the example plants (edited in app)',actor:'app',base:[a.id],at:new Date().toISOString()};
+  const c={id:uid(),entity:'task-demo-1',field:'status',value:'doing',actor:'app',base:[],at:new Date().toISOString()};
+  R.written=[];for(const e of [a,b,c]){const rng=await append('app-events',e);R.written.push({id:e.id,rng});log('appended '+e.id+' -> '+rng);}
+  R.steps.push('app wrote 3');}catch(e){log('ERR '+e.message);R.err=e.message;}};
+$('b-read').onclick=async()=>{try{
+  const evs=await allEvents();const out=fold(evs);R.fold=out;R.eventCount=evs.length;
+  log('events read: '+evs.length+' ('+evs.filter(e=>e.actor==='app').length+' app, '+evs.filter(e=>e.actor!=='app').length+' other)');
+  log('state: '+JSON.stringify(out.state));log('conflicts: '+JSON.stringify(out.conflicts));log('missing base: '+JSON.stringify(out.missing));
+  if(R.written){const ids=new Set(evs.map(e=>e.id));R.readbackAll=R.written.every(w=>ids.has(w.id));log('read-back of my writes by id: '+R.readbackAll);}
+  R.steps.push('read+fold');}catch(e){log('ERR '+e.message);R.err=e.message;}};
+$('b-conflict').onclick=async()=>{try{
+  const evs=await allEvents();const f=fold(evs);
+  const base=(R.written&&R.written[0])?[R.written[0].id]:[];
+  const e={id:uid(),entity:'task-demo-1',field:'title',value:'Water the example plants (second edit from stale base)',actor:'app',base,at:new Date().toISOString()};
+  R.conflictEvent=e.id;log('appended '+e.id+' -> '+await append('app-events',e));R.steps.push('stale-base edit');}catch(e){log('ERR '+e.message);R.err=e.message;}};
+$('b-resolve').onclick=async()=>{try{
+  const evs=await allEvents();const f=fold(evs);const c=f.conflicts.find(x=>x.field==='title');
+  if(!c){log('no conflict to resolve');return;}
+  const e={id:uid(),entity:c.entity,field:c.field,value:c.candidates[0].value,actor:'app',base:c.candidates.map(x=>x.id),at:new Date().toISOString()};
+  log('resolution '+e.id+' -> '+await append('app-events',e));const f2=fold(await allEvents());R.afterResolve=f2;log('conflicts after: '+JSON.stringify(f2.conflicts));R.steps.push('resolved');}catch(e){log('ERR '+e.message);R.err=e.message;}};
+</script></body></html>
