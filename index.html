@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>This Week - v4 dummy recovery prototype</title>
+<title>This Week - v4.2 dummy recovery prototype</title>
 <style>
 :root{--ink:#1d1d1f;--mut:#6e6e73;--line:#e3e3e6;--bg:#f5f5f7;--card:#fff;--acc:#0a5cff;--amber:#b86e00;--red:#c1272d;--grn:#1e7d32}
 *{box-sizing:border-box;margin:0}
@@ -36,7 +36,9 @@ textarea,input[type=text],input[type=date],input[type=number],select{width:100%;
 textarea{min-height:84px;resize:vertical}
 label.f{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
 .row{display:flex;gap:8px;flex-wrap:wrap}
-.row>*{flex:1}
+.row>*{flex:1;min-width:0}
+.task-fields input{min-width:0;max-width:100%}
+@media(max-width:480px){.task-fields{flex-direction:column}.task-fields>*{flex:auto;width:100%}}
 nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;z-index:6}
 nav button{flex:1;border:0;background:none;padding:9px 0 11px;font-size:12.5px;color:var(--mut);cursor:pointer}
 nav button.on{color:var(--acc);font-weight:600}
@@ -382,12 +384,12 @@ function openSheet(id){const t=byId(id);if(!t)return;const sh=$('#sheet'),inn=$(
     +'<label class="f">Title</label><input type="text" id="sTitle" value="'+esc(t.title)+'">'
     +'<label class="f">Notes (meaning only you know, kept inside)</label><textarea id="sNotes">'+esc(t.notes)+'</textarea>'
     +'<label class="f">Tags (space or comma separated)</label><input type="text" id="sTags" value="'+esc((t.tags||[]).join(' '))+'">'
-    +'<div class="row"><div><label class="f">Real due date</label><input type="date" id="sDue" value="'+(t.dueDate||'')+'"></div>'
+    +'<div class="row task-fields"><div><label class="f">Real due date</label><input type="date" id="sDue" value="'+(t.dueDate||'')+'"></div>'
     +'<div><label class="f">Planned day (a plan, not the deadline)</label><input type="date" id="sDay" value="'+(t.plannedDay||'')+'"></div></div>'
-    +'<div class="row"><div><label class="f">Not before</label><input type="date" id="sNB" value="'+(t.notBefore||'')+'"></div>'
+    +'<div class="row task-fields"><div><label class="f">Not before</label><input type="date" id="sNB" value="'+(t.notBefore||'')+'"></div>'
     +'<div><label class="f">Rough size (minutes, blank = not rated)</label><input type="number" id="sSize" min="0" step="5" value="'+(t.sizeMin==null?'':t.sizeMin)+'"></div></div>'
     +'<label class="f">Effort</label><div class="chips" id="sEff">'+[['','not rated'],['low','mindless'],['med','some thought'],['high','deep focus']].map(([v,l])=>'<button data-v="'+v+'" class="'+((t.effort||'')===v?'on':'')+'">'+l+'</button>').join('')+'</div>'
-    +'<label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" id="sInter" style="width:auto" '+(t.interruptible?'checked':'')+'> Can be interrupted and resumed</label>'
+    +'<label class="f" for="sInter">Can be interrupted and resumed</label><select id="sInter"><option value="" '+(t.interruptible==null?'selected':'')+'>Not rated</option><option value="true" '+(t.interruptible===true?'selected':'')+'>Yes</option><option value="false" '+(t.interruptible===false?'selected':'')+'>No</option></select>'
     +'<label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" id="sMust" style="width:auto" '+(isMust(t)?'checked':'')+'> Must do this week</label>'
     +'<label class="f">Depends on (done first)</label><select id="sDep" multiple size="3">'+open.map(x=>'<option value="'+x.id+'" '+((t.dependsOn||[]).includes(x.id)?'selected':'')+'>'+esc(x.title)+'</option>').join('')+'</select>'
     +'<label class="f">Column</label><div class="chips" id="sCol">'+['inbox','now','next','later'].map(c=>'<button data-v="'+c+'" class="'+(t.col===c?'on':'')+'">'+c+'</button>').join('')+'</div>'
@@ -409,7 +411,7 @@ function openSheet(id){const t=byId(id);if(!t)return;const sh=$('#sheet'),inn=$(
     const ch={title:inn.querySelector('#sTitle').value.trim()||t.title,notes:inn.querySelector('#sNotes').value,
       tags,dueDate:inn.querySelector('#sDue').value||null,plannedDay:inn.querySelector('#sDay').value||null,
       notBefore:inn.querySelector('#sNB').value||null,sizeMin:inn.querySelector('#sSize').value===''?null:+inn.querySelector('#sSize').value,
-      effort:eff||null,interruptible:inn.querySelector('#sInter').checked,dependsOn:deps,col,
+      effort:eff||null,interruptible:inn.querySelector('#sInter').value===''?null:inn.querySelector('#sInter').value==='true',dependsOn:deps,col,
       mustWeekOf:inn.querySelector('#sMust').checked?weekStart(todayStr()):null};
     const diff={};for(const k in ch)if(JSON.stringify(ch[k])!==JSON.stringify(t[k]))diff[k]=ch[k];
     if(Object.keys(diff).length)changeTask(t,diff,'Edited in the app');
@@ -543,7 +545,7 @@ function fold4(raw){
 function validateEvents4(events){if(!Array.isArray(events))throw Error('Event list is missing.');for(const e of events){if(!e||typeof e.id!=='string'||typeof e.entity!=='string'||typeof e.field!=='string'||!Array.isArray(e.base)||e.base.some(b=>typeof b!=='string')||typeof e.actor!=='string'||!('value'in e)||typeof e.at!=='string')throw Error('Invalid event record.');if(!/^(task|photo):[A-Za-z0-9_-]+$/.test(e.entity))throw Error('Invalid record identifier.');if(!/^(task|photo):[A-Za-z0-9_-]+$/.test(e.entity))throw Error('Invalid record identifier.');if(!/^(task|photo):[A-Za-z0-9_-]+$/.test(e.entity))throw Error('Invalid record identifier.');if(!/^(task|photo):[A-Za-z0-9_-]+$/.test(e.entity))throw Error('Invalid record identifier.');if(!/^(task|photo):[A-Za-z0-9_-]+$/.test(e.entity))throw Error('Invalid record identifier.');if(e.entity.startsWith('task:')&&!FIELDS.includes(e.field))throw Error('Unknown task field.');if(e.entity.startsWith('task:')){const f=e.field,v=e.value;if(['title','notes','outcome','createdAt'].includes(f)&&typeof v!=='string')throw Error('Invalid text field.');if(['tags','dependsOn','photos'].includes(f)&&(!Array.isArray(v)||v.some(x=>typeof x!=='string')))throw Error('Invalid list field.');if(f==='progress'&&(!v||typeof v.state!=='string'||typeof v.stoppingPoint!=='string'))throw Error('Invalid progress.');if(f==='status'&&!['open','done','dropped'].includes(v))throw Error('Invalid task status.');if(f==='col'&&!['inbox','now','next','later'].includes(v))throw Error('Invalid column.');if(f==='rhythm'&&v!==null&&(!Number.isInteger(v.target)||v.target<1||v.target>100||!Array.isArray(v.doneDates)))throw Error('Invalid rhythm.');if(['deleted','partialImport'].includes(f)&&v!==null&&typeof v!=='boolean')throw Error('Invalid flag.');}if(e.entity.startsWith('photo:')&&(e.field!=='data'||typeof e.value!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(e.value)))throw Error('Invalid photo event.');if(e.entity.startsWith('photo:')&&(e.field!=='data'||typeof e.value!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(e.value)))throw Error('Invalid photo event.');if(e.entity.startsWith('photo:')&&(e.field!=='data'||typeof e.value!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(e.value)))throw Error('Invalid photo event.');if(e.entity.startsWith('photo:')&&(e.field!=='data'||typeof e.value!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(e.value)))throw Error('Invalid photo event.');if(e.entity.startsWith('photo:')&&(e.field!=='data'||typeof e.value!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(e.value)))throw Error('Invalid photo event.');if(!e.entity.startsWith('task:')&&!e.entity.startsWith('photo:'))throw Error('Unknown record type.');}fold4(events);}
 function envelope4(){return {...vault4,tasks:state.tasks,photos:state.photos};}
 function writeLocal4(next){localStorage.setItem(V4KEY,JSON.stringify(next));}
-function updateChip4(){const c=$('#storeChip');if(!c)return;c.textContent=saveFailed4?'Not saved - download recovery':busy4?'Syncing...':vault4.outbox.length?'Saved here · sync waiting':vault4.lastSync?'Synced · saved here':'Saved on this device';c.style.color=saveFailed4?'#a31820':'';}
+function updateChip4(){const c=$('#storeChip');if(!c)return;c.textContent=saveFailed4?'Not saved - download recovery':busy4?'Syncing...':vault4.outbox.length?'Saved here · sync waiting':'Saved on this device';c.style.color=saveFailed4?'#a31820':'';}
 function status4(){if(saveFailed4)return 'Storage could not save the latest change. Keep this page open and download a recovery file.';if(problem4)return problem4;if(!vault4.binding){if(access4&&Date.now()<expires4&&account4===vault4.expectedAccount)return 'Google account verified for this session. Ready to create one dummy sheet. Your tasks are saved on this device.';return 'Saved on this device. No Google sheet linked. Google connection is not yet verified.';}if(!access4||Date.now()>=expires4)return 'Saved on this device. Connect Google when you want to sync.';return vault4.outbox.length?'Changes are waiting to sync.':'Connected for this session. Your board also stays on this device.';}
 function diffEvents4(){const out=[],f=fold4(vault4.events),old=new Map(baseline4.tasks.map(t=>[t.id,t]));
  for(const t of state.tasks){const prev=old.get(t.id);old.delete(t.id);for(const field of FIELDS){const v=field==='deleted'?false:(t[field]??null);if(!prev||JSON.stringify(prev[field]??(field==='deleted'?false:null))!==JSON.stringify(v)){const entity='task:'+t.id,k=JSON.stringify([entity,field]);out.push({id:eventId4(),entity,field,value:copy4(v),actor:'app',base:(f.heads[k]||[]).map(e=>e.id),at:nowISO()});}}}
